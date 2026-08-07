@@ -12,8 +12,8 @@ Controle de versão configurado nesta etapa:
 - Conferido que nenhum segredo real seria versionado: `backend/app/config/settings.js` (credenciais locais) segue fora do Git; apenas `settings.example.js` (placeholders) foi versionado.
 - Primeiro commit criado com sucesso: `Estrutura inicial do projeto` (59 arquivos).
 - Branch local renomeada para `main` (branch `master` anterior ficou como resíduo local inofensivo, removível com `git branch -d master`).
-- Repositório remoto no GitHub: **pendente de criação pelo responsável** — nome definido `royal-crm-live`, visibilidade **pública**, autenticação **SSH**. Comandos entregues ao responsável para rodar no Terminal local (fora desta sessão), pois o GitHub CLI (`gh`) não está disponível neste ambiente e o push exige a autenticação SSH do computador do responsável.
-- Observação de ambiente: este ambiente de sessão não permite excluir arquivos (`rm`), apenas renomear (`mv`) — isso causou travas do Git (`index.lock`) que precisaram ser contornadas. Detalhes e solução em `docs/ERROS.md` (registro de 07/08/2026).
+- Repositório remoto no GitHub criado e conectado: **https://github.com/royaltidev/CRM-Live** (conta `royaltidev`, público, autenticação via SSH). Push do histórico local (`main`) concluído com sucesso pelo responsável a partir do Terminal do computador dele.
+- Observação de ambiente: este ambiente de sessão não permite excluir arquivos (`rm`), apenas renomear (`mv`) — isso causou travas do Git (`index.lock`) que precisaram ser contornadas; também não há acesso SSH de saída neste sandbox (só HTTPS), por isso o push precisou ser feito pelo responsável, fora desta sessão. Detalhes em `docs/ERROS.md` (registros de 07/08/2026).
 
 Decisões técnicas tomadas nesta etapa (pontos que o `docs/FSD.md` deixava em aberto para a fase de codificação):
 - Framework HTTP do backend: **Express**.
@@ -52,7 +52,7 @@ Decisões técnicas tomadas nesta etapa (pontos que o `docs/FSD.md` deixava em a
 - [x] `AGENTS.md` criado na raiz.
 - [x] `docs/PLANO.md`, `docs/STATUS.md` e `docs/ERROS.md` criados.
 - [x] Repositório Git inicializado e primeiro commit — **concluído em 07/08/2026**. A trava do Git que bloqueava o `git commit` na sessão anterior foi contornada (ver `docs/ERROS.md`); commit `Estrutura inicial do projeto` criado com sucesso, branch `main`.
-- [ ] Repositório remoto no GitHub criado e push realizado — **pendente de ação do responsável** (rodar comandos no Terminal local; ver instruções entregues nesta etapa).
+- [x] Repositório remoto no GitHub criado e push realizado — **concluído em 07/08/2026**. Repositório: https://github.com/royaltidev/CRM-Live (público). Backup do projeto local completo no GitHub.
 
 ## Fase atual
 

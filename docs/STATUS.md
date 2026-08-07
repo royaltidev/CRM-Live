@@ -26,7 +26,7 @@ Decisões técnicas tomadas nesta etapa (pontos que o `docs/FSD.md` deixava em a
 | Fase | Descrição | Status |
 | --- | --- | --- |
 | 1 | Infraestrutura e base do projeto | ✅ Concluída |
-| 2 | Banco de dados e persistência | ⏳ Não iniciada |
+| 2 | Banco de dados e persistência | ✅ Concluída |
 | 3 | Autenticação, sessão, controle de acesso e gestão de usuários | ⏳ Não iniciada |
 | 4 | Integração com o Uniplus (sincronização) | 🚫 Bloqueada (schema do Uniplus não mapeado) |
 | 5 | Cadastro/visão 360º do cliente + Segmentação | ⏳ Não iniciada |
@@ -37,6 +37,24 @@ Decisões técnicas tomadas nesta etapa (pontos que o `docs/FSD.md` deixava em a
 | 10 | Gestão de satisfação (NPS) | ⏳ Não iniciada |
 | 11 | Relatórios, dashboards e exportações | ⏳ Não iniciada |
 | Final | Itens transversais, segurança, qualidade, deploy | ⏳ Não iniciada |
+
+## Checklist da Fase 2 (concluída em 07/08/2026)
+
+- [x] Driver PostgreSQL (`pg`) instalado em `backend/package.json`.
+- [x] `backend/app/database/connection.js` — conexão com base própria do CRM Live.
+- [x] Conexão somente leitura para o Uniplus configurada em `settings.example.js` (credenciais reais devem ser preenchidas em produção).
+- [x] Estrutura de migrations em `backend/app/database/migrations/`.
+- [x] Comando interno de execução de migrations: `node app/database/migrate.js` (executável via `docker compose exec backend`).
+- [x] Tabela de controle `schema_migrations` criada automaticamente pelo script.
+- [x] **28 migrations** de todas as tabelas descritas em `docs/FSD.md`, seção 11.2:
+  - 001–003: Usuários, clientes, tags
+  - 004–011: Associações, segmentos, vendedores, vendas, produtos, estoque, complementares
+  - 012–015: Automações, templates, anexos
+  - 016–019: Campanhas, cupons, giftback
+  - 020–025: Consentimento, conversas, mensagens, leads, NPS
+  - 026–028: Configurações, sincronizações, eventos de segurança
+- [x] Índices, constraints e chaves estrangeiras com `ON DELETE RESTRICT` em tabelas de histórico (FSD 11.3).
+- [x] Validação de sintaxe dos arquivos Node.js concluída.
 
 ## Checklist da Fase 1 (concluída em 07/08/2026)
 
@@ -56,11 +74,11 @@ Decisões técnicas tomadas nesta etapa (pontos que o `docs/FSD.md` deixava em a
 
 ## Fase atual
 
-**Fase 1 — Infraestrutura e base do projeto: concluída.**
+**Fase 2 — Banco de dados e persistência: concluída em 07/08/2026.**
 
 ## Próximo passo recomendado
 
-Iniciar a **Fase 2 — Banco de dados e persistência**: driver PostgreSQL, conexão com a base própria do CRM Live, conexão somente leitura com o Uniplus (dados de conexão reais ainda pendentes de o responsável fornecer), estrutura de migrations e criação de todas as tabelas descritas em `docs/FSD.md`, seção 11. A Fase 2 **não** depende do mapeamento do schema do Uniplus (isso só bloqueia a Fase 4).
+Iniciar a **Fase 3 — Autenticação, sessão, controle de acesso e gestão de usuários**: implementar login via Google OAuth 2.0, middleware de sessão (token assinado com sliding expiration), RBAC nos dois perfis (Administrador/Acesso limitado), log de segurança, e tela de gestão de usuários do CRM Live. Fase 3 **não** depende do mapeamento do schema do Uniplus.
 
 ## Pendências que não bloqueiam a Fase 2, mas precisam ser resolvidas antes das fases indicadas
 

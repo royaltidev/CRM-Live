@@ -13,6 +13,9 @@
   },
   "dependencies": {
     "express": "^4.19.2",
-    "pg": "^8.11.3"
+    "pg": "^8.11.3",
+    "jsonwebtoken": "^9.1.2",
+    "google-auth-library": "^9.6.3",
+    "cookie-parser": "^1.4.6"
   }
 }

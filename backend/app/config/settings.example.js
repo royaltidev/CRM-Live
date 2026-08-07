@@ -34,20 +34,28 @@ module.exports = {
     readOnly: true,
   },
 
-  // Sessão / autenticação (implementação prevista para a Fase 3).
+  // Sessão / autenticação (Fase 3).
   session: {
-    // Chave usada para assinar o token de sessão. Gere um valor aleatório forte
-    // em cada ambiente — nunca reutilize o mesmo valor entre desenvolvimento e produção.
-    secret: 'CHANGE_ME',
-    // Duração da sessão (sliding expiration), em horas. Ver docs/FSD.md, seção 15.
+    // Chave usada para assinar o token de sessão (JWT).
+    // Gere um valor aleatório forte em cada ambiente:
+    //   node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+    // NUNCA reutilize entre desenvolvimento e produção.
+    secret: 'CHANGE_ME_WITH_A_STRONG_RANDOM_VALUE',
+    // Duração da sessão (sliding expiration), em horas (ver FSD seção 15).
     expirationHours: 12,
   },
 
-  // Autenticação via Google OAuth 2.0 (implementação prevista para a Fase 3).
+  // Autenticação via Google OAuth 2.0 (Fase 3).
+  // Obtenha credenciais em: https://console.cloud.google.com/
+  // Em desenvolvimento, use localhost:3000; em produção, use o domínio real.
   googleOAuth: {
-    clientId: 'CHANGE_ME',
-    clientSecret: 'CHANGE_ME',
+    clientId: 'YOUR_GOOGLE_CLIENT_ID_HERE.apps.googleusercontent.com',
+    clientSecret: 'YOUR_GOOGLE_CLIENT_SECRET_HERE',
+    // URL para retorno do Google após autenticação (callback).
+    // DEVE corresponder ao redirecionamento autorizado no Google Cloud Console.
     callbackUrl: 'http://localhost:3000/auth/google/callback',
+    // Audience do token ID (frontend)
+    frontendClientId: 'YOUR_GOOGLE_CLIENT_ID_HERE.apps.googleusercontent.com',
   },
 
   // Caminhos internos de armazenamento — sempre fora de rota pública (docs/FSD.md, seção 5.4).

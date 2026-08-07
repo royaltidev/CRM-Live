@@ -27,7 +27,7 @@ Decisões técnicas tomadas nesta etapa (pontos que o `docs/FSD.md` deixava em a
 | --- | --- | --- |
 | 1 | Infraestrutura e base do projeto | ✅ Concluída |
 | 2 | Banco de dados e persistência | ✅ Concluída |
-| 3 | Autenticação, sessão, controle de acesso e gestão de usuários | ⏳ Não iniciada |
+| 3 | Autenticação, sessão, controle de acesso e gestão de usuários | ✅ Concluída |
 | 4 | Integração com o Uniplus (sincronização) | 🚫 Bloqueada (schema do Uniplus não mapeado) |
 | 5 | Cadastro/visão 360º do cliente + Segmentação | ⏳ Não iniciada |
 | 6 | Consentimento (LGPD) + camada de mensageria | ⏳ Não iniciada |
@@ -37,6 +37,29 @@ Decisões técnicas tomadas nesta etapa (pontos que o `docs/FSD.md` deixava em a
 | 10 | Gestão de satisfação (NPS) | ⏳ Não iniciada |
 | 11 | Relatórios, dashboards e exportações | ⏳ Não iniciada |
 | Final | Itens transversais, segurança, qualidade, deploy | ⏳ Não iniciada |
+
+## Checklist da Fase 3 (concluída em 07/08/2026)
+
+- [x] Dependências de autenticação instaladas (jsonwebtoken, google-auth-library, cookie-parser).
+- [x] Service de autenticação (auth.service.js) — valida token Google, cria/atualiza usuário, gera sessão.
+- [x] Middleware de autenticação (auth.middleware.js) — valida JWT, sliding expiration.
+- [x] Controller de autenticação (auth.controller.js) — rotas de login, callback, logout.
+- [x] Controller de usuários (users.controller.js) — listar, desativar (exclusivo Admin).
+- [x] Fluxo de login via Google OAuth 2.0:
+  - Primeira conta criada vira Administrador
+  - Demais contas ficam Acesso Limitado
+- [x] Sessão via token JWT (12h com sliding expiration).
+- [x] Proteção de rotas com middleware RBAC.
+- [x] Log de segurança (`security_events`): login_success, login_failed, permission_denied, user_access_changed.
+- [x] Frontend:
+  - Tema customizado MUI conforme `docs/Design/design.md` ("Admin Logic")
+  - Contexto de autenticação (AuthContext.jsx) + hook useAuth()
+  - Tela de login com botão "Entrar com Google"
+  - Tela de gestão de usuários (Users.jsx) — exclusiva do Admin
+  - Tela de dashboard
+  - Roteamento com proteção (ProtectedRoute)
+- [x] Vite config com proxy para chamadas de API.
+- [x] Validação de sintaxe Node.js concluída.
 
 ## Checklist da Fase 2 (concluída em 07/08/2026)
 
@@ -74,11 +97,36 @@ Decisões técnicas tomadas nesta etapa (pontos que o `docs/FSD.md` deixava em a
 
 ## Fase atual
 
-**Fase 2 — Banco de dados e persistência: concluída em 07/08/2026.**
+**Fase 3 — Autenticação, sessão, controle de acesso e gestão de usuários: concluída em 07/08/2026.**
 
 ## Próximo passo recomendado
 
-Iniciar a **Fase 3 — Autenticação, sessão, controle de acesso e gestão de usuários**: implementar login via Google OAuth 2.0, middleware de sessão (token assinado com sliding expiration), RBAC nos dois perfis (Administrador/Acesso limitado), log de segurança, e tela de gestão de usuários do CRM Live. Fase 3 **não** depende do mapeamento do schema do Uniplus.
+**Fase 4 está bloqueada** — precisa do mapeamento do schema real do banco do Uniplus.
+
+Após receber esse mapeamento, iniciar a **Fase 4 — Integração com o Uniplus (sincronização)**:
+- Job periódico que lê clientes, vendas, produtos e estoque do Uniplus (somente-leitura)
+- Atualiza tabelas-espelho do CRM Live
+- Recalcula RFM e atualiza segmentos dinâmicos
+- Aciona automações para novas vendas
+- Painel de status de sincronização
+
+## Configurações Necessárias Antes de Testar
+
+**Google OAuth 2.0:**
+1. Acesse https://console.cloud.google.com/
+2. Crie um novo projeto
+3. Ative Google Sign-In API
+4. Crie credenciais OAuth 2.0 (Desktop e Web)
+5. Adicione `http://localhost:3000/auth/google/callback` como Authorized Redirect URI
+6. Copie `Client ID` e `Client Secret` para `backend/app/config/settings.js`
+7. Use o `Client ID` em `frontend/.env` como `VITE_GOOGLE_CLIENT_ID`
+
+**Secrets do Backend:**
+```bash
+# Gere um valor aleatório forte para session.secret:
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
+Copie o valor para `backend/app/config/settings.js` > `session.secret`
 
 ## Pendências que não bloqueiam a Fase 2, mas precisam ser resolvidas antes das fases indicadas
 

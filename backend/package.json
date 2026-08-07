@@ -1,0 +1,17 @@
+{
+  "name": "crm-live-backend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "API backend do CRM Live (Node.js + Express), conforme docs/FSD.md.",
+  "main": "app/main.js",
+  "scripts": {
+    "start": "node app/main.js",
+    "dev": "node --watch app/main.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}

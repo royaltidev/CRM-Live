@@ -1,0 +1,35 @@
+# Normaliza final de linha (LF) para arquivos de texto, evitando divergências
+# entre Windows (ambiente de produção) e o ambiente de desenvolvimento.
+* text=auto eol=lf
+
+# Código-fonte (backend Node.js e frontend React)
+*.js text
+*.jsx text
+*.mjs text
+*.cjs text
+*.json text
+
+# Documentação
+*.md text
+*.mdx text
+
+# Configuração e infraestrutura
+*.yml text
+*.yaml text
+Dockerfile text
+*.dockerignore text
+.gitignore text
+.gitattributes text
+
+# Web
+*.html text
+*.css text
+*.svg text
+
+# Binários — nunca aplicar conversão de fim de linha nem diff textual
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.ico binary
+*.pdf binary

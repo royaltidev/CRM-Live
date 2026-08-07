@@ -1,0 +1,61 @@
+# Status do Projeto — CRM Live
+
+**Última atualização:** 07/08/2026
+**Atualizado por:** preparação inicial do terreno (Fase 1)
+
+## Estado atual
+
+Terreno preparado: estrutura inicial do projeto, arquivos vivos e plano de construção criados. Nenhuma funcionalidade de negócio foi implementada ainda — apenas infraestrutura.
+
+Decisões técnicas tomadas nesta etapa (pontos que o `docs/FSD.md` deixava em aberto para a fase de codificação):
+- Framework HTTP do backend: **Express**.
+- Ferramenta de build do frontend: **Vite**.
+- Sistema de módulos do backend: **CommonJS**.
+- Roteamento do frontend: **React Router** (assumido por ser o padrão de fato para SPAs React; a pasta `frontend/src/routes/` já prevista no FSD pressupõe uma biblioteca de rotas).
+
+## Fases (ver detalhamento completo em `docs/PLANO.md`)
+
+| Fase | Descrição | Status |
+| --- | --- | --- |
+| 1 | Infraestrutura e base do projeto | ✅ Concluída |
+| 2 | Banco de dados e persistência | ⏳ Não iniciada |
+| 3 | Autenticação, sessão, controle de acesso e gestão de usuários | ⏳ Não iniciada |
+| 4 | Integração com o Uniplus (sincronização) | 🚫 Bloqueada (schema do Uniplus não mapeado) |
+| 5 | Cadastro/visão 360º do cliente + Segmentação | ⏳ Não iniciada |
+| 6 | Consentimento (LGPD) + camada de mensageria | ⏳ Não iniciada |
+| 7 | Réguas de relacionamento (automações) | ⏳ Não iniciada |
+| 8 | Campanhas, templates, cupons, giftback, uploads | ⏳ Não iniciada |
+| 9 | Atendimento (caixa de entrada) e leads | ⏳ Não iniciada |
+| 10 | Gestão de satisfação (NPS) | ⏳ Não iniciada |
+| 11 | Relatórios, dashboards e exportações | ⏳ Não iniciada |
+| Final | Itens transversais, segurança, qualidade, deploy | ⏳ Não iniciada |
+
+## Checklist da Fase 1 (concluída em 07/08/2026)
+
+- [x] Estrutura de diretórios conforme `docs/FSD.md`, seção 5.3.
+- [x] `docker-compose.yml` com os três serviços (`db`, `backend`, `frontend`).
+- [x] `backend/app/config/settings.example.js` (versionado, sem segredos).
+- [x] `backend/app/config/settings.js` (local, placeholders de desenvolvimento, fora do Git).
+- [x] `.gitignore` cobrindo `settings.js`, `node_modules/`, conteúdo de `storage/`.
+- [x] Scaffold do backend (Express, `main.js` com health-check apenas).
+- [x] Scaffold do frontend (Vite + React + MUI, tema "Admin Logic" aplicado).
+- [x] Pastas internas isoladas (nenhuma rota estática aponta para elas — ainda não há rotas de negócio).
+- [x] Arquivos de `docs/INSUMOS.md` marcados como "Sim"/"Provável sim" copiados para `frontend/public/` (favicons, `logo-oval.svg/png`, `icone.svg`).
+- [x] `AGENTS.md` criado na raiz.
+- [x] `docs/PLANO.md`, `docs/STATUS.md` e `docs/ERROS.md` criados.
+- [ ] Repositório Git inicializado e primeiro commit — **bloqueado nesta sessão** (ver observação abaixo). `git init` e `git add` foram executados com sucesso, mas `git commit` falhou porque o ambiente desta sessão não tem permissão para excluir/renomear arquivos dentro da pasta do projeto (restrição do ambiente de trabalho, não do projeto em si). É necessário rodar `git commit` manualmente no Terminal do computador, fora desta sessão, para concluir o versionamento.
+
+## Fase atual
+
+**Fase 1 — Infraestrutura e base do projeto: concluída.**
+
+## Próximo passo recomendado
+
+Iniciar a **Fase 2 — Banco de dados e persistência**: driver PostgreSQL, conexão com a base própria do CRM Live, conexão somente leitura com o Uniplus (dados de conexão reais ainda pendentes de o responsável fornecer), estrutura de migrations e criação de todas as tabelas descritas em `docs/FSD.md`, seção 11. A Fase 2 **não** depende do mapeamento do schema do Uniplus (isso só bloqueia a Fase 4).
+
+## Pendências que não bloqueiam a Fase 2, mas precisam ser resolvidas antes das fases indicadas
+
+- **Mapeamento do schema do Uniplus** — bloqueia a Fase 4 (sincronização). Ver `docs/FSD.md`, seção 27.
+- **Biblioteca de automação do WhatsApp Web** (`whatsapp-web.js` vs. Baileys) — decisão necessária antes da Fase 6.
+- **Uso das variantes de logomarca** ainda não confirmadas (`logo-oval-branca`, `logo-oval-monocromatica`, `avatar-1024.png`, `preview-branca-fundo-escuro.png`) — confirmar com o responsável antes de aplicá-las a alguma tela (relevante a partir da Fase 3, quando as primeiras telas reais forem construídas).
+- **Estratégia de backup** da base de dados do CRM Live (RNF-07) — a definir antes da entrega em produção (Fase Final).

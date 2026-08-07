@@ -1,0 +1,31 @@
+# Dependências
+node_modules/
+
+# Arquivo de configuração real do backend (contém credenciais) — nunca versionar.
+# Apenas backend/app/config/settings.example.js é versionado.
+backend/app/config/settings.js
+
+# Conteúdo de armazenamento local (mantém a pasta, ignora o conteúdo)
+backend/app/storage/attachments/*
+!backend/app/storage/attachments/.gitkeep
+backend/app/storage/logs/*
+!backend/app/storage/logs/.gitkeep
+
+# Sessão local do WhatsApp Web (Fase 6 em diante)
+backend/app/storage/whatsapp-session/
+
+# Build do frontend
+frontend/dist/
+frontend/.vite/
+
+# Sistema operacional
+.DS_Store
+Thumbs.db
+
+# Logs diversos
+*.log
+npm-debug.log*
+
+# Arquivos temporários diversos
+*.tmp
+*.temp

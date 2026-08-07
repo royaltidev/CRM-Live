@@ -1,0 +1,59 @@
+# Docker Compose do CRM Live — três serviços: banco de dados, backend (API Node.js)
+# e frontend (React). O mesmo arquivo é reaproveitado do ambiente local de
+# desenvolvimento para o ambiente de produção (PC Windows da loja), conforme
+# docs/FSD.md, seções 3 e 4.
+#
+# Nesta fase (infraestrutura), o backend e o frontend sobem sem funcionalidades
+# de negócio — apenas validam que os três serviços conversam entre si.
+#
+# Segurança: a senha do banco abaixo usa um valor padrão de desenvolvimento
+# (dev_only_change_me), sobrescrevível pela variável de ambiente POSTGRES_PASSWORD
+# no momento da execução (ex.: `POSTGRES_PASSWORD=xxx docker compose up`).
+# O projeto não usa arquivo .env para credenciais (docs/FSD.md, seção 5.5) — em
+# produção, este valor deve ser definido via variável de ambiente do sistema
+# operacional/serviço, nunca hardcoded neste arquivo.
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: crm-live-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: crm_live
+      POSTGRES_USER: crm_live_app
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dev_only_change_me}
+    volumes:
+      - crm_live_db_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  backend:
+    build:
+      context: ./backend
+    container_name: crm-live-backend
+    restart: unless-stopped
+    depends_on:
+      - db
+    volumes:
+      - ./backend:/app
+      - crm_live_backend_node_modules:/app/node_modules
+    ports:
+      - "3000:3000"
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: crm-live-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    volumes:
+      - ./frontend:/app
+      - crm_live_frontend_node_modules:/app/node_modules
+    ports:
+      - "5173:5173"
+
+volumes:
+  crm_live_db_data:
+  crm_live_backend_node_modules:
+  crm_live_frontend_node_modules:

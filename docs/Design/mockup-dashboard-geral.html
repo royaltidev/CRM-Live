@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>CRM Live — Dashboard geral de relacionamento (esboço)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    /* Admin Logic — design tokens (docs/design/design.md) */
+    --surface: #f7f9fb;
+    --surface-container-lowest: #ffffff;
+    --surface-container-low: #f2f4f6;
+    --surface-container: #eceef0;
+    --surface-container-high: #e6e8ea;
+    --on-surface: #191c1e;
+    --on-surface-variant: #444651;
+    --outline: #757682;
+    --outline-variant: #c5c5d3;
+    --primary: #0f2d7b;
+    --on-primary: #ffffff;
+    --primary-fixed: #dce1ff;
+    --on-primary-fixed-variant: #28418f;
+    --secondary: #97378d;
+    --on-secondary: #ffffff;
+    --secondary-fixed: #ffd7f3;
+    --on-secondary-fixed-variant: #7b1c73;
+    --error: #ba1a1a;
+    --on-error: #ffffff;
+    --error-container: #ffdad6;
+    --on-error-container: #93000a;
+    /* Cores funcionais não listadas explicitamente no design.md (aproximação Emerald/Amber
+       mantendo a mesma temperatura fria do restante da paleta) */
+    --success: #146c43;
+    --success-container: #d9f0e1;
+    --on-success-container: #0c4b2e;
+    --warning: #8a5a00;
+    --warning-container: #ffe9bf;
+    --on-warning-container: #5c3b00;
+
+    --radius-sm: 0.125rem;
+    --radius: 0.25rem;
+    --radius-md: 0.375rem;
+    --radius-lg: 0.5rem;
+    --radius-full: 9999px;
+
+    --sp-xs: 4px;
+    --sp-sm: 8px;
+    --sp-md: 16px;
+    --sp-lg: 24px;
+    --sp-xl: 32px;
+
+    --font-display: 'Public Sans', sans-serif;
+    --font-body: 'Inter', sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--surface);
+    color: var(--on-surface);
+    font-family: var(--font-body);
+    font-feature-settings: 'tnum' 1;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .app {
+    display: grid;
+    grid-template-columns: 240px 1fr;
+    min-height: 100vh;
+  }
+
+  /* ---------- Sidebar ---------- */
+  .sidebar {
+    background: var(--surface-container-lowest);
+    border-right: 1px solid var(--outline-variant);
+    padding: var(--sp-lg) var(--sp-md);
+    display: flex;
+    flex-direction: column;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-sm);
+    margin-bottom: var(--sp-xl);
+  }
+  .brand-mark {
+    width: 28px; height: 28px;
+    border-radius: var(--radius-md);
+    background: var(--primary);
+  }
+  .brand-name {
+    font-family: var(--font-display);
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+  }
+  .nav { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+  .nav-item {
+    display: flex;
+    align-items: center;
+    padding: var(--sp-sm) var(--sp-sm);
+    border-radius: var(--radius);
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--on-surface-variant);
+    cursor: default;
+  }
+  .nav-item.active {
+    background: var(--primary-fixed);
+    color: var(--on-primary-fixed-variant);
+    font-weight: 600;
+  }
+  .nav-footer {
+    margin-top: auto;
+    padding-top: var(--sp-lg);
+    border-top: 1px solid var(--outline-variant);
+    display: flex;
+    align-items: center;
+    gap: var(--sp-sm);
+  }
+  .avatar {
+    width: 32px; height: 32px;
+    border-radius: 50%;
+    background: var(--primary);
+    color: var(--on-primary);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 600;
+  }
+  .nav-footer-text { line-height: 1.3; }
+  .nav-footer-name { font-size: 13px; font-weight: 600; }
+  .nav-footer-role { font-size: 12px; color: var(--on-surface-variant); }
+
+  /* ---------- Main ---------- */
+  .main { padding: var(--sp-lg) var(--sp-xl); }
+
+  .page-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    margin-bottom: var(--sp-lg);
+    gap: var(--sp-md);
+  }
+  .page-title {
+    font-family: var(--font-display);
+    font-size: 24px;
+    font-weight: 700;
+    line-height: 32px;
+    letter-spacing: -0.02em;
+    margin: 0 0 2px;
+  }
+  .page-subtitle {
+    font-size: 13px;
+    line-height: 18px;
+    color: var(--on-surface-variant);
+    margin: 0;
+  }
+  .toolbar { display: flex; gap: var(--sp-sm); align-items: center; }
+
+  .select {
+    appearance: none;
+    font-family: var(--font-body);
+    font-size: 13px;
+    color: var(--on-surface);
+    background: var(--surface-container-lowest);
+    border: 1px solid var(--outline-variant);
+    border-radius: var(--radius);
+    padding: 7px 28px 7px 12px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23444651'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+  }
+
+  .btn {
+    font-family: var(--font-body);
+    font-size: 13px;
+    font-weight: 600;
+    border-radius: var(--radius);
+    padding: 7px 14px;
+    cursor: default;
+    border: 1px solid transparent;
+  }
+  .btn-secondary {
+    background: transparent;
+    border-color: var(--primary);
+    color: var(--primary);
+  }
+  .btn-primary {
+    background: var(--primary);
+    color: var(--on-primary);
+  }
+
+  /* ---------- KPI cards ---------- */
+  .kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: var(--sp-md);
+    margin-bottom: var(--sp-lg);
+  }
+  .kpi-card {
+    background: var(--surface-container-lowest);
+    border: 1px solid var(--outline-variant);
+    border-radius: var(--radius-lg);
+    padding: var(--sp-md);
+  }
+  .kpi-label {
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 16px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--on-surface-variant);
+    margin: 0 0 var(--sp-sm);
+  }
+  .kpi-value {
+    font-family: var(--font-display);
+    font-size: 24px;
+    font-weight: 700;
+    line-height: 32px;
+    letter-spacing: -0.02em;
+    margin: 0 0 4px;
+  }
+  .kpi-trend { font-size: 13px; font-weight: 500; }
+  .trend-up { color: var(--success); }
+  .trend-down { color: var(--error); }
+  .kpi-split-bar {
+    display: flex;
+    height: 6px;
+    border-radius: var(--radius-full);
+    overflow: hidden;
+    margin-top: var(--sp-sm);
+    background: var(--surface-container-high);
+  }
+  .kpi-split-active { background: var(--primary); }
+  .kpi-split-inactive { background: var(--outline-variant); }
+
+  /* ---------- Content grid ---------- */
+  .content-grid {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: var(--sp-md);
+    align-items: start;
+  }
+  .panel {
+    background: var(--surface-container-lowest);
+    border: 1px solid var(--outline-variant);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+  }
+  .panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: var(--sp-md);
+    border-bottom: 1px solid var(--outline-variant);
+  }
+  .panel-title {
+    font-family: var(--font-display);
+    font-size: 16px;
+    font-weight: 600;
+    line-height: 24px;
+    margin: 0;
+  }
+  .panel-note { font-size: 12px; color: var(--on-surface-variant); }
+
+  table.data-table { width: 100%; border-collapse: collapse; }
+  .data-table th {
+    text-align: left;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--on-surface-variant);
+    padding: var(--sp-sm) var(--sp-md);
+    background: var(--surface-container-low);
+    border-bottom: 1px solid var(--outline-variant);
+  }
+  .data-table td {
+    padding: 10px var(--sp-md);
+    font-size: 14px;
+    border-bottom: 1px solid var(--outline-variant);
+  }
+  .data-table tr:last-child td { border-bottom: none; }
+  .cell-name { font-weight: 500; }
+  .cell-meta { font-size: 13px; color: var(--on-surface-variant); }
+  .cell-mono { font-family: var(--font-body); font-size: 14px; font-weight: 500; font-feature-settings: 'tnum' 1; }
+
+  .chip {
+    display: inline-block;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: var(--radius-full);
+  }
+  .chip-success { background: var(--success-container); color: var(--on-success-container); }
+  .chip-primary { background: var(--primary-fixed); color: var(--on-primary-fixed-variant); }
+  .chip-neutral { background: var(--surface-container-high); color: var(--on-surface-variant); }
+
+  /* ---------- Side panel: alerts ---------- */
+  .alert-list { display: flex; flex-direction: column; }
+  .alert-item {
+    display: flex;
+    gap: var(--sp-sm);
+    padding: var(--sp-md);
+    border-bottom: 1px solid var(--outline-variant);
+  }
+  .alert-item:last-child { border-bottom: none; }
+  .alert-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    margin-top: 6px;
+    flex-shrink: 0;
+  }
+  .dot-warning { background: var(--warning); }
+  .dot-success { background: var(--success); }
+  .alert-text { font-size: 13px; line-height: 18px; }
+  .alert-meta { font-size: 12px; color: var(--on-surface-variant); margin-top: 2px; }
+  .alert-link { font-size: 12px; font-weight: 600; color: var(--primary); margin-top: 4px; display: inline-block; }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark"></div>
+      <div class="brand-name">CRM Live</div>
+    </div>
+    <ul class="nav">
+      <li class="nav-item active">Dashboard</li>
+      <li class="nav-item">Clientes</li>
+      <li class="nav-item">Segmentação</li>
+      <li class="nav-item">Réguas de relacionamento</li>
+      <li class="nav-item">Campanhas</li>
+      <li class="nav-item">Caixa de entrada</li>
+      <li class="nav-item">Gestão de NPS</li>
+      <li class="nav-item">Sincronização Uniplus</li>
+      <li class="nav-item">Configurações</li>
+    </ul>
+    <div class="nav-footer">
+      <div class="avatar">W</div>
+      <div class="nav-footer-text">
+        <div class="nav-footer-name">Wilian</div>
+        <div class="nav-footer-role">Administrador</div>
+      </div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Dashboard geral de relacionamento</h1>
+        <p class="page-subtitle">Visão geral da saúde do relacionamento com os clientes — dados de exemplo</p>
+      </div>
+      <div class="toolbar">
+        <select class="select"><option>Últimos 30 dias</option></select>
+        <button class="btn btn-secondary">Exportar CSV</button>
+        <button class="btn btn-secondary">Exportar PDF</button>
+      </div>
+    </div>
+
+    <section class="kpi-grid">
+      <div class="kpi-card">
+        <p class="kpi-label">Taxa de recompra</p>
+        <p class="kpi-value">34,2%</p>
+        <p class="kpi-trend trend-up">↑ 2,1 pts vs. período anterior</p>
+      </div>
+      <div class="kpi-card">
+        <p class="kpi-label">Ticket médio</p>
+        <p class="kpi-value">R$ 187,40</p>
+        <p class="kpi-trend trend-up">↑ 4,8%</p>
+      </div>
+      <div class="kpi-card">
+        <p class="kpi-label">Frequência de compra</p>
+        <p class="kpi-value">1,8x / mês</p>
+        <p class="kpi-trend trend-down">↓ 0,2x</p>
+      </div>
+      <div class="kpi-card">
+        <p class="kpi-label">Clientes ativos x inativos</p>
+        <p class="kpi-value">612 / 148</p>
+        <div class="kpi-split-bar">
+          <div class="kpi-split-active" style="width:80.5%"></div>
+          <div class="kpi-split-inactive" style="width:19.5%"></div>
+        </div>
+      </div>
+      <div class="kpi-card">
+        <p class="kpi-label">NPS médio</p>
+        <p class="kpi-value">71</p>
+        <p class="kpi-trend trend-up">↑ 5 pts</p>
+      </div>
+    </section>
+
+    <section class="content-grid">
+      <div class="panel">
+        <div class="panel-header">
+          <h2 class="panel-title">Campanhas recentes</h2>
+          <span class="panel-note">exemplo — não faz parte do escopo literal da tela 12.2 do FSD</span>
+        </div>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Campanha</th>
+              <th>Status</th>
+              <th>Enviadas</th>
+              <th>Respondidas</th>
+              <th>Vendas atribuídas</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><div class="cell-name">Dia dos Pais — 10% OFF</div><div class="cell-meta">Segmento: VIP</div></td>
+              <td><span class="chip chip-success">Enviada</span></td>
+              <td class="cell-mono">312</td>
+              <td class="cell-mono">47</td>
+              <td class="cell-mono">18</td>
+            </tr>
+            <tr>
+              <td><div class="cell-name">Reposição de ração — aviso de estoque</div><div class="cell-meta">Segmento: interesse em produto</div></td>
+              <td><span class="chip chip-primary">Agendada</span></td>
+              <td class="cell-mono">—</td>
+              <td class="cell-mono">—</td>
+              <td class="cell-mono">—</td>
+            </tr>
+            <tr>
+              <td><div class="cell-name">Reativação 90 dias — etapa 3</div><div class="cell-meta">Segmento: em risco</div></td>
+              <td><span class="chip chip-success">Enviada</span></td>
+              <td class="cell-mono">96</td>
+              <td class="cell-mono">9</td>
+              <td class="cell-mono">3</td>
+            </tr>
+            <tr>
+              <td><div class="cell-name">Aniversário do mês</div><div class="cell-meta">Segmento: aniversariantes</div></td>
+              <td><span class="chip chip-neutral">Rascunho</span></td>
+              <td class="cell-mono">—</td>
+              <td class="cell-mono">—</td>
+              <td class="cell-mono">—</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <h2 class="panel-title">Alertas e pendências</h2>
+        </div>
+        <div class="alert-list">
+          <div class="alert-item">
+            <div class="alert-dot dot-warning"></div>
+            <div>
+              <div class="alert-text">3 notas de satisfação baixas aguardando tratamento</div>
+              <a class="alert-link">Ver notas de NPS →</a>
+            </div>
+          </div>
+          <div class="alert-item">
+            <div class="alert-dot dot-success"></div>
+            <div>
+              <div class="alert-text">Sincronização com o Uniplus</div>
+              <div class="alert-meta">Última execução há 12 min · sem erros</div>
+            </div>
+          </div>
+          <div class="alert-item">
+            <div class="alert-dot dot-success"></div>
+            <div>
+              <div class="alert-text">Sessão do WhatsApp</div>
+              <div class="alert-meta">Conectada · número dedicado</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+</div>
+</body>
+</html>

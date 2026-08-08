@@ -5,6 +5,7 @@
 // - Fase 2: Banco de dados e persistência.
 // - Fase 3: Autenticação, sessão, RBAC e gestão de usuários.
 // - Fase 5: Cadastro/visão 360º do cliente, segmentação (RFM + dinâmica), vendedores.
+// - Fase 6: Consentimento (LGPD), camada de mensageria (whatsapp-web.js) e fila de envio.
 
 const express = require('express');
 const cookieParser = require('cookie-parser');
@@ -15,7 +16,11 @@ const customersController = require('./controllers/customers.controller');
 const tagsController = require('./controllers/tags.controller');
 const segmentsController = require('./controllers/segments.controller');
 const sellersController = require('./controllers/sellers.controller');
+const consentController = require('./controllers/consent.controller');
+const messagesController = require('./controllers/messages.controller');
 const { requireAuth, requireAdmin } = require('./middleware/auth.middleware');
+const whatsapp = require('./integrations/whatsapp');
+const { startMessageQueueJob } = require('./jobs/message-queue.job');
 
 const app = express();
 
@@ -91,6 +96,14 @@ app.get('/sellers/:id', requireAuth, sellersController.getSellerById);
 app.patch('/sellers/:id', requireAuth, sellersController.updateSeller);
 app.patch('/sellers/:id/toggle-active', requireAuth, sellersController.toggleSellerActive);
 
+// ===== Rotas de Consentimento e LGPD (Fase 6) =====
+
+app.get('/consent/report', requireAuth, consentController.getConsentReportHandler);
+
+// ===== Rotas de Mensagens / Log de Disparos (Fase 6) =====
+
+app.get('/messages', requireAuth, messagesController.listMessages);
+
 // ===== Tratamento de Erros Genérico =====
 
 app.use((err, req, res, next) => {
@@ -106,4 +119,17 @@ app.listen(settings.port, () => {
   console.log(`✓ CRM Live backend rodando na porta ${settings.port}`);
   console.log(`  Health check: GET http://localhost:${settings.port}/health`);
   console.log(`  Callback OAuth: POST http://localhost:${settings.port}/auth/google/callback`);
+
+  // Inicializa a camada de mensageria (whatsapp-web.js). Não bloqueia o boot
+  // do servidor: erros de inicialização (ex.: Chromium indisponível no
+  // ambiente) são tratados internamente pelo provider e apenas logados —
+  // ver backend/app/integrations/whatsapp/providers/whatsapp-web-provider.js.
+  // No primeiro pareamento (ou se a sessão local for invalidada), o QR Code
+  // é impresso neste console e precisa ser escaneado manualmente.
+  whatsapp.initialize();
+
+  // Inicia o processamento periódico da fila de envio de mensagens
+  // (a cada 60s). Fica "pausado" (sem processar nada) até o Administrador
+  // configurar a cadência de disparo em system_settings (chave message_cadence).
+  startMessageQueueJob();
 });

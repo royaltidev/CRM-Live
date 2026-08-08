@@ -30,13 +30,57 @@ Decisões técnicas tomadas nesta etapa (pontos que o `docs/FSD.md` deixava em a
 | 3 | Autenticação, sessão, controle de acesso e gestão de usuários | ✅ Concluída |
 | 4 | Integração com o Uniplus (sincronização) | 🚫 Bloqueada (schema do Uniplus não mapeado) |
 | 5 | Cadastro/visão 360º do cliente + Segmentação | ✅ Concluída |
-| 6 | Consentimento (LGPD) + camada de mensageria | ⏳ Não iniciada |
+| 6 | Consentimento (LGPD) + camada de mensageria | ✅ Concluída |
 | 7 | Réguas de relacionamento (automações) | ⏳ Não iniciada |
 | 8 | Campanhas, templates, cupons, giftback, uploads | ⏳ Não iniciada |
 | 9 | Atendimento (caixa de entrada) e leads | ⏳ Não iniciada |
 | 10 | Gestão de satisfação (NPS) | ⏳ Não iniciada |
 | 11 | Relatórios, dashboards e exportações | ⏳ Não iniciada |
 | Final | Itens transversais, segurança, qualidade, deploy | ⏳ Não iniciada |
+
+## Checklist da Fase 6 (concluída em 08/08/2026)
+
+Construída com 2 subagentes em paralelo (Consentimento; Mensageria+Fila),
+seguidos de integração manual (rotas, menu, main.js, testes).
+
+**Decisão técnica confirmada pelo responsável:** biblioteca de automação do
+WhatsApp Web = **`whatsapp-web.js`** (não Baileys) — decisão tomada em
+08/08/2026 após comparação de trade-offs (Baileys é mais leve mas o
+responsável teve problemas de estabilidade de conexão com ela em outro
+projeto; `whatsapp-web.js` é mais pesada — usa Puppeteer/Chromium — mas mais
+estável e documentada na experiência do responsável).
+
+**Módulo Consentimento e LGPD** (FSD 6.6, 13.8, 14.2, tela 12.15):
+- [x] `consent.service.js` — contrato público usado pela fila de envio: `getConsent`, `optIn`, `optOut`, `isCustomerEligibleForMessage` (true somente se opted_in=true E opted_out=false), `processInboundOptOutKeyword` (match exato pós-trim contra `OPT_OUT_KEYWORDS = ['SAIR','PARAR','CANCELAR','STOP']`, registra opt-out + evento de segurança `customer_opt_out`).
+- [x] `consent-report.service.js` / `consent.controller.js` — `GET /consent/report`, com status calculado (opted_in / opted_out / never_contacted) via LEFT JOIN customers↔consents.
+- [x] Frontend: `Consentimento.jsx` (filtro por status/período).
+- [x] A função de processamento de opt-out por palavra-chave está pronta mas **ainda não é chamada por nenhum fluxo real de recebimento de mensagem** — isso só existirá quando a caixa de entrada (Fase 9) ou o listener de mensagens inbound do provider whatsapp-web.js for conectado a ela. Ponto de atenção registrado para a Fase 9.
+
+**Módulo Mensageria e Fila de Envio** (FSD 9.11, 6.10, 14.3, 20):
+- [x] `backend/app/integrations/whatsapp/index.js` — abstração única (`initialize`, `sendText`, `sendImage`, `getConnectionStatus`, `onSessionDown`), seleciona o provider por `settings.whatsapp.provider`.
+- [x] `backend/app/integrations/whatsapp/providers/whatsapp-web-provider.js` — único arquivo do projeto que importa `whatsapp-web.js` diretamente; sessão persistida via `LocalAuth` em `settings.whatsapp.sessionStoragePath`; QR code de pareamento impresso no console (`qrcode-terminal`); evento `disconnected` gera `whatsapp_session_down` no log de segurança.
+- [x] `message-queue.service.js` — `enqueueMessage` (checa consentimento na entrada, não insere nada em `messages` se recusado), `processQueueBatch` (checa consentimento de novo na saída, respeita janela de horário, limite mensal de 30 dias corridos, cadência configurável), `listMessages` (log de disparos paginado).
+- [x] `backend/app/jobs/message-queue.job.js` — processa a fila a cada 60s; **fica pausado** (`status: 'pending_configuration'`) até o Administrador configurar `system_settings.message_cadence` — sem valor padrão assumido, mesmo padrão usado em `rfm.service.js` (Fase 5).
+- [x] Migration `029_seed_default_message_settings.js` — semeia (idempotente) os dois parâmetros que TÊM padrão definido no FSD: `message_monthly_limit_per_customer` (20) e `message_send_window` (8h–18h). `message_cadence` é intencionalmente deixada sem valor.
+- [x] `GET /messages` (log de disparos) + tela `LogDisparos.jsx`.
+- [x] Nenhum outro módulo importa `whatsapp-web.js` diretamente (validado por inspeção — só o provider faz esse require).
+
+**Integração final:**
+- [x] Rotas registradas em `main.js`: `GET /consent/report`, `GET /messages`.
+- [x] `whatsapp.initialize()` e `startMessageQueueJob()` chamados no callback de `app.listen(...)` — não bloqueiam o boot do servidor (erros de inicialização são capturados internamente pelos próprios módulos).
+- [x] Menu lateral (`AppLayout.jsx`) atualizado com "Consentimento (LGPD)" e "Log de Disparos".
+- [x] Novas rotas de frontend (`/consentimento`, `/log-disparos`) registradas em `App.jsx`.
+
+**Testes executados nesta sessão:**
+- [x] `node -c` em todos os `.js` novos/alterados — sem erros.
+- [x] `npx vite build` — build de produção completo, sem erros (com o `dist/` antigo renomeado via `mv`, já que o sandbox não permite excluir arquivos — mesmo padrão registrado em `docs/ERROS.md` desde a Fase 1).
+- [x] `npm install` no backend com as novas dependências (`whatsapp-web.js`, `qrcode-terminal`) — **o download do Chromium pelo Puppeteer falhou no sandbox** (rede restrita, HTTP 403 ao baixar o binário) — contornado com `PUPPETEER_SKIP_DOWNLOAD=true` só para validar que os módulos Node resolvem corretamente. **Isso não deve acontecer no ambiente Docker real do usuário**, que tem acesso de rede completo; ainda assim, vale conferir na primeira vez que rodar `docker compose up --build`.
+- [x] `node app/main.js` rodando de verdade: servidor sobe normalmente; a falha de inicialização do WhatsApp (Chrome ausente no sandbox) e a falha de conexão com o banco (`db` não resolve fora do Docker) foram **ambas capturadas graciosamente** pelos try/catch internos — o processo não caiu em nenhum dos dois casos. Isso é um bom sinal de robustez para um sistema que roda 24/7 sem supervisão.
+- [x] Testes end-to-end via `curl`: `GET /health` → 200; `GET /consent/report` e `GET /messages` sem sessão → 401.
+- [x] Nomes de coluna de `consent-report.service.js` e `message-queue.service.js` conferidos contra as migrations reais (`consents`, `customers`, `messages`, `system_settings`) — nenhuma divergência.
+- [ ] **Não testado nesta sessão:** conexão real com WhatsApp Web (exige Chromium instalado + escaneamento de QR Code com um celular de verdade — só é possível no ambiente Docker real do usuário) e fluxo completo de envio de mensagem com PostgreSQL real.
+
+**Achado durante a integração (não é bug, é decisão registrada):** apareceu um arquivo `backend/app/integrations/uniplus/schema-explorer.js` no diretório do projeto — uma ferramenta somente-leitura para mapear tabelas/colunas do banco do Uniplus (útil para desbloquear a Fase 4), mas que **não foi criada por nenhum agente desta sessão** (nem consentimento, nem mensageria). Foi deixada de fora do commit da Fase 6 por não fazer parte do escopo pedido. Ainda está no diretório, sem versionamento — o responsável decide se quer mantê-la, descartá-la, ou pedir para versioná-la separadamente.
 
 ## Checklist da Fase 5 (concluída em 08/08/2026)
 
@@ -133,21 +177,24 @@ seguidos de integração manual (rotas, menu, dados de demonstração, testes).
 
 ## Fase atual
 
-**Fase 5 — Cadastro/visão 360º do cliente + Segmentação: concluída em 08/08/2026.**
+**Fase 6 — Consentimento (LGPD) + Camada de mensageria e fila de envio: concluída em 08/08/2026.**
 
 ## Próximo passo recomendado
 
 **Fase 4 permanece bloqueada** — precisa do mapeamento do schema real do banco do Uniplus. Não é a próxima fase sequencial, mas segue sem previsão até essa dependência ser resolvida.
 
-Entre as fases não bloqueadas, a próxima é a **Fase 6 — Consentimento (LGPD) + Camada de mensageria e fila de envio**:
-- Modelo de consentimento (opt-in/opt-out) e bloqueio de envio sem consentimento válido
-- Fluxo de opt-out por palavra-chave (ex.: "SAIR")
-- Decisão final: `whatsapp-web.js` ou Baileys (pendência registrada desde a Fase 1)
-- Camada de abstração `integrations/whatsapp/`
-- Fila de envio com controle de cadência, limite diário/mensal e janela de horário
-- Relatório de consentimento (LGPD)
+Entre as fases não bloqueadas, a próxima é a **Fase 7 — Réguas de relacionamento (automações)**:
+- Motor de réguas (gatilho + condição + ação), com bloqueio de ativação sem modelo de mensagem associado
+- Réguas específicas: agradecimento pós-venda, aniversário, lembrete de recompra, NPS, reativação (win-back) em cascata, aviso de volta ao estoque
+- Régua `first_identified_purchase` (adiada da Fase 5 — ver checklist da Fase 5)
+- Tela de clientes elegíveis por etapa do win-back
 
-Antes de demonstrar a Fase 5 ao cliente, rode o script de dados de demonstração
+**Antes de configurar o WhatsApp em produção**, é necessário:
+1. Rodar `docker compose up --build` no ambiente de produção (PC da loja) — lá o download do Chromium pelo Puppeteer deve funcionar normalmente (no sandbox desta sessão de desenvolvimento, a rede é restrita e isso falhou — ver `docs/ERROS.md`).
+2. Escanear o QR Code impresso no console do backend com o WhatsApp do celular dedicado à loja (número diferente do principal de atendimento, conforme FSD seção 24).
+3. Configurar `system_settings.message_cadence` (intervalo entre mensagens + limite diário) — a fila de envio fica pausada até isso ser feito, de propósito, para não assumir um valor arbitrário.
+
+Antes de demonstrar as telas ao cliente, rode o script de dados de demonstração
 (ver seção abaixo) para que as telas de Clientes e Segmentação não apareçam vazias.
 
 ## Como Popular o Banco com Dados de Demonstração (para apresentar ao cliente)

@@ -16,6 +16,7 @@ backend/app/storage/whatsapp-session/
 
 # Build do frontend
 frontend/dist/
+frontend/dist.old*/
 frontend/.vite/
 frontend/vite.config.js.timestamp-*.mjs
 

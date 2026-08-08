@@ -22,6 +22,8 @@ import DonutSmallIcon from '@mui/icons-material/DonutSmallOutlined';
 import StorefrontIcon from '@mui/icons-material/StorefrontOutlined';
 import ManageAccountsIcon from '@mui/icons-material/ManageAccountsOutlined';
 import LogoutIcon from '@mui/icons-material/LogoutOutlined';
+import GppGoodIcon from '@mui/icons-material/GppGoodOutlined';
+import ForumIcon from '@mui/icons-material/ForumOutlined';
 import { useAuth } from '../contexts/AuthContext';
 
 const DRAWER_WIDTH = 260;
@@ -34,6 +36,8 @@ const MENU_ITEMS = [
   { label: 'Segmentação', path: '/segmentacao', icon: DonutSmallIcon },
   { label: 'Vendedores', path: '/vendedores', icon: StorefrontIcon },
   { label: 'Tags', path: '/tags', icon: LocalOfferIcon },
+  { label: 'Consentimento (LGPD)', path: '/consentimento', icon: GppGoodIcon },
+  { label: 'Log de Disparos', path: '/log-disparos', icon: ForumIcon },
   { label: 'Gestão de Usuários', path: '/users', icon: ManageAccountsIcon, adminOnly: true },
 ];
 

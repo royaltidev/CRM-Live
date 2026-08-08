@@ -32,6 +32,14 @@ Não registre aqui dados sensíveis, credenciais, tokens ou dados pessoais de cl
 
 ---
 
+## 08/08/2026 - `npm install` do backend falhando ao instalar `whatsapp-web.js` (download do Chromium pelo Puppeteer bloqueado)
+- Sintoma: ao rodar `npm install` em `backend/` (Fase 6, depois de adicionar `whatsapp-web.js`), o comando falhava com `Error: ERROR: Failed to set up chrome v146.0.7680.31! ... Download failed: server returned code 403` ao tentar baixar o binário do Chromium usado pelo Puppeteer (dependência do `whatsapp-web.js`).
+- Causa: o ambiente sandbox desta sessão de desenvolvimento tem acesso de rede restrito (allowlist de domínios) e não conseguiu baixar o binário do Chromium a partir de `storage.googleapis.com`. Isso é uma limitação do ambiente de desenvolvimento remoto usado nesta sessão, não do código do projeto.
+- Solução aplicada: rodei `PUPPETEER_SKIP_DOWNLOAD=true npm install` apenas para validar que os módulos Node.js resolvem corretamente (contrato de imports, `require('whatsapp-web.js')` funcionando) — sem o binário do Chromium, não é possível testar uma conexão real do WhatsApp Web nesta sessão. O `node app/main.js` foi executado mesmo assim: a falha de inicialização foi capturada graciosamente pelo try/catch do provider (`backend/app/integrations/whatsapp/providers/whatsapp-web-provider.js`), sem derrubar o servidor.
+- Como evitar no futuro: **este erro não deve ocorrer no ambiente Docker real do usuário** (rede completa, sem restrição de allowlist) — mas, no primeiro `docker compose up --build` em qualquer ambiente novo (desenvolvimento local do responsável ou produção no PC da loja), vale conferir os logs do build do container `backend` para confirmar que o download do Chromium completou com sucesso. Se o mesmo erro 403 aparecer em um ambiente com internet normal, verificar se algum firewall/proxy corporativo está bloqueando `storage.googleapis.com`.
+
+---
+
 ---
 
 ## 07/08/2026 - `git push` para o GitHub falhando (sem chave SSH, remoto apontando para conta/repositório errados)

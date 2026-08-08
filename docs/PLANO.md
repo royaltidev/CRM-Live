@@ -145,20 +145,24 @@ Decisões técnicas tomadas durante a preparação do terreno (07/08/2026), para
 **Objetivo:** implementar o módulo 6.6 (consentimento/opt-in/opt-out), a camada de abstração de mensageria (seção 9.11) e a fila de envio com controle de cadência (módulo 6.10).
 
 **Checklist:**
-- [ ] Modelo de consentimento (`consents`) e regra de bloqueio de envio sem `opted_in`/com `opted_out`.
-- [ ] Fluxo de opt-out por palavra-chave (ex.: "SAIR") com evento `customer_opt_out`.
-- [ ] Decisão final: `whatsapp-web.js` ou Baileys.
-- [ ] Camada de abstração `integrations/whatsapp/` (interface genérica: enviar texto, enviar com imagem, verificar status).
-- [ ] Provedor `whatsapp_web` implementado atrás da interface.
-- [ ] Fila de envio com controle de cadência, limite diário, limite de 20 mensagens/cliente/mês e janela de horário (8h–18h).
-- [ ] Reenfileiramento de mensagens geradas fora da janela permitida.
-- [ ] Log de disparos (`messages`) e alerta de sessão do WhatsApp caída (`whatsapp_session_down`).
-- [ ] Relatório de consentimento (tela 12.15).
+- [x] Modelo de consentimento (`consents`) e regra de bloqueio de envio sem `opted_in`/com `opted_out`.
+- [x] Fluxo de opt-out por palavra-chave (ex.: "SAIR") com evento `customer_opt_out`.
+- [x] Decisão final: **`whatsapp-web.js`** (confirmada pelo responsável em 08/08/2026 — prioriza estabilidade de conexão sobre menor consumo de recursos, por experiência prévia de instabilidade com Baileys em outro projeto).
+- [x] Camada de abstração `integrations/whatsapp/` (interface genérica: enviar texto, enviar com imagem, verificar status).
+- [x] Provedor `whatsapp_web` implementado atrás da interface.
+- [x] Fila de envio com controle de cadência, limite diário, limite de 20 mensagens/cliente/mês e janela de horário (8h–18h).
+- [x] Reenfileiramento de mensagens geradas fora da janela permitida (mensagens permanecem `queued`, nunca descartadas).
+- [x] Log de disparos (`messages`) e alerta de sessão do WhatsApp caída (`whatsapp_session_down`).
+- [x] Relatório de consentimento (tela 12.15).
 
 **Critérios de pronto:**
-- Nenhuma mensagem é enviada a cliente sem consentimento válido ou na lista de supressão — testável de forma automatizada.
-- Nenhuma régua, campanha ou funcionalidade de atendimento referencia diretamente a biblioteca de automação do WhatsApp (apenas a camada de abstração).
-- Mensagens fora da janela de horário ficam enfileiradas, não descartadas.
+- Nenhuma mensagem é enviada a cliente sem consentimento válido ou na lista de supressão — testável de forma automatizada. ✅ (checagem dupla: na entrada da fila e novamente antes do envio)
+- Nenhuma régua, campanha ou funcionalidade de atendimento referencia diretamente a biblioteca de automação do WhatsApp (apenas a camada de abstração). ✅ (`whatsapp-web.js` só é importado em `providers/whatsapp-web-provider.js`)
+- Mensagens fora da janela de horário ficam enfileiradas, não descartadas. ✅
+
+**Concluída em 08/08/2026.** Ver checklist detalhado e decisões de implementação em `docs/STATUS.md`.
+
+**Pendência operacional conhecida (não bloqueia a fase, mas precisa de ação humana):** não há tela no frontend para exibir o QR Code de pareamento do WhatsApp Web. Na primeira inicialização em produção, o QR Code aparece apenas no console/terminal do processo backend e precisa ser escaneado manualmente no celular vinculado à loja, a partir do PC onde o sistema roda. Depois do primeiro pareamento a sessão fica salva e sobrevive a reinícios.
 
 **Arquivos/pastas prováveis:** `backend/app/integrations/whatsapp/`, `backend/app/jobs/message-queue*`, `backend/app/services/consent/`, `frontend/src/views/Consentimento`.
 

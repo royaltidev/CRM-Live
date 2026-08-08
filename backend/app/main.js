@@ -4,12 +4,17 @@
 // - Fase 1: Infraestrutura básica (health-check).
 // - Fase 2: Banco de dados e persistência.
 // - Fase 3: Autenticação, sessão, RBAC e gestão de usuários.
+// - Fase 5: Cadastro/visão 360º do cliente, segmentação (RFM + dinâmica), vendedores.
 
 const express = require('express');
 const cookieParser = require('cookie-parser');
 const settings = require('./config/settings');
 const authController = require('./controllers/auth.controller');
 const usersController = require('./controllers/users.controller');
+const customersController = require('./controllers/customers.controller');
+const tagsController = require('./controllers/tags.controller');
+const segmentsController = require('./controllers/segments.controller');
+const sellersController = require('./controllers/sellers.controller');
 const { requireAuth, requireAdmin } = require('./middleware/auth.middleware');
 
 const app = express();
@@ -42,6 +47,49 @@ app.get('/users', requireAuth, requireAdmin, usersController.listUsers);
 
 // Desativar um usuário.
 app.patch('/users/:id/deactivate', requireAuth, requireAdmin, usersController.deactivateUser);
+
+// ===== Rotas de Clientes e Tags (Fase 5 — Admin e Acesso Limitado) =====
+
+// IMPORTANTE: rota de relatório precisa vir antes de '/customers/:id',
+// senão o Express interpretaria "reports" como um :id.
+app.get('/customers/reports/sales-without-customer', requireAuth, customersController.getSalesWithoutCustomer);
+app.get('/customers', requireAuth, customersController.listCustomers);
+app.get('/customers/:id', requireAuth, customersController.getCustomerById);
+app.get('/customers/:id/timeline', requireAuth, customersController.getCustomerTimeline);
+app.patch('/customers/:id', requireAuth, customersController.updateCustomerComplementaryFields);
+app.post('/customers/:id/tags', requireAuth, customersController.addTagToCustomer);
+app.delete('/customers/:id/tags/:tagId', requireAuth, customersController.removeTagFromCustomer);
+
+app.get('/tags', requireAuth, tagsController.listTags);
+app.post('/tags', requireAuth, tagsController.createTag);
+app.patch('/tags/:id', requireAuth, tagsController.updateTag);
+app.delete('/tags/:id', requireAuth, tagsController.deleteTag);
+
+// ===== Rotas de Segmentação — RFM e Segmentos Dinâmicos (Fase 5) =====
+
+// IMPORTANTE: sub-rotas de /segments/rfm/* e /segments/preview precisam vir
+// antes de '/segments/:id', senão o Express interpretaria "rfm"/"preview" como um :id.
+app.get('/segments/rfm/criteria', requireAuth, segmentsController.getRfmCriteria);
+app.put('/segments/rfm/criteria', requireAuth, requireAdmin, segmentsController.setRfmCriteria);
+app.post('/segments/rfm/recalculate', requireAuth, segmentsController.recalculateRfm);
+app.post('/segments/preview', requireAuth, segmentsController.previewSegmentCustomers);
+
+app.get('/segments', requireAuth, segmentsController.listSegments);
+app.post('/segments', requireAuth, segmentsController.createSegment);
+app.get('/segments/:id', requireAuth, segmentsController.getSegmentById);
+app.patch('/segments/:id', requireAuth, segmentsController.updateSegment);
+app.delete('/segments/:id', requireAuth, segmentsController.deleteSegment);
+
+// ===== Rotas de Vendedores e Fila de Rodízio (Fase 5) =====
+
+// IMPORTANTE: '/sellers/rotation/next' precisa vir antes de '/sellers/:id',
+// senão o Express interpretaria "rotation" como um :id.
+app.get('/sellers/rotation/next', requireAuth, sellersController.getNextInRotation);
+app.get('/sellers', requireAuth, sellersController.listSellers);
+app.post('/sellers', requireAuth, sellersController.createSeller);
+app.get('/sellers/:id', requireAuth, sellersController.getSellerById);
+app.patch('/sellers/:id', requireAuth, sellersController.updateSeller);
+app.patch('/sellers/:id/toggle-active', requireAuth, sellersController.toggleSellerActive);
 
 // ===== Tratamento de Erros Genérico =====
 

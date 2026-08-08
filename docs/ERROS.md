@@ -24,6 +24,16 @@ Não registre aqui dados sensíveis, credenciais, tokens ou dados pessoais de cl
 
 ---
 
+## 08/08/2026 - `npm install` falhando no backend com "No matching version found for jsonwebtoken@^9.1.2"
+- Sintoma: ao rodar `npm install` em `backend/` (Fase 5, durante teste de integração), o comando falhava com `ETARGET` / `No matching version found for jsonwebtoken@^9.1.2`.
+- Causa: o `backend/package.json` foi criado na Fase 3 com `"jsonwebtoken": "^9.1.2"`, mas essa versão nunca existiu no npm — a última versão publicada da major 9 é `9.0.3`. Provavelmente um número de versão digitado incorretamente durante a Fase 3, e que não tinha sido detectado porque `npm install` não havia sido executado de fato até este teste da Fase 5.
+- Solução aplicada: corrigido para `"jsonwebtoken": "^9.0.2"` em `backend/package.json`. `npm install` passou a funcionar normalmente.
+- Como evitar no futuro: sempre que adicionar ou alterar uma dependência em `package.json`, rodar `npm install` de fato (não apenas editar o arquivo) antes de considerar a tarefa concluída — isso teria detectado o erro já na Fase 3. A partir da Fase 5, `npm install` + `npx vite build` (frontend) e `node app/main.js` (backend) passaram a fazer parte da rotina de validação antes de finalizar uma fase.
+
+---
+
+---
+
 ## 07/08/2026 - `git push` para o GitHub falhando (sem chave SSH, remoto apontando para conta/repositório errados)
 - Sintoma: sequência de falhas ao conectar o repositório local ao GitHub: (1) `git remote add origin ...` retornando `error: remote origin already exists` (havia um remoto antigo, de uma sessão anterior não documentada, apontando para `https://github.com/royalti/CRM-Live.git`); (2) `git push` retornando `Permission denied (publickey)`; (3) depois de gerar a chave SSH, ainda `Permission denied (publickey)` porque a chave não tinha sido cadastrada na conta GitHub; (4) depois de cadastrar a chave, `ERROR: Repository not found` porque o repositório `royaltidev/CRM-Live` ainda não existia no GitHub (só havia sido criado localmente o remoto apontando para ele, não o repositório em si).
 - Causa: (a) o computador do responsável nunca teve uma chave SSH configurada para o GitHub; (b) o repositório remoto correto (`royaltidev/CRM-Live`) não havia sido de fato criado no site do GitHub antes de configurar o remoto local; (c) o ambiente desta sessão (sandbox) não tem acesso de rede SSH de saída (só HTTPS), então o push não pôde ser feito diretamente por esta sessão, apenas pelo Terminal do responsável.

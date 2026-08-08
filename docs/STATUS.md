@@ -29,7 +29,7 @@ Decisões técnicas tomadas nesta etapa (pontos que o `docs/FSD.md` deixava em a
 | 2 | Banco de dados e persistência | ✅ Concluída |
 | 3 | Autenticação, sessão, controle de acesso e gestão de usuários | ✅ Concluída |
 | 4 | Integração com o Uniplus (sincronização) | 🚫 Bloqueada (schema do Uniplus não mapeado) |
-| 5 | Cadastro/visão 360º do cliente + Segmentação | ⏳ Não iniciada |
+| 5 | Cadastro/visão 360º do cliente + Segmentação | ✅ Concluída |
 | 6 | Consentimento (LGPD) + camada de mensageria | ⏳ Não iniciada |
 | 7 | Réguas de relacionamento (automações) | ⏳ Não iniciada |
 | 8 | Campanhas, templates, cupons, giftback, uploads | ⏳ Não iniciada |
@@ -37,6 +37,42 @@ Decisões técnicas tomadas nesta etapa (pontos que o `docs/FSD.md` deixava em a
 | 10 | Gestão de satisfação (NPS) | ⏳ Não iniciada |
 | 11 | Relatórios, dashboards e exportações | ⏳ Não iniciada |
 | Final | Itens transversais, segurança, qualidade, deploy | ⏳ Não iniciada |
+
+## Checklist da Fase 5 (concluída em 08/08/2026)
+
+Construída com 3 subagentes em paralelo (Clientes/Tags, Segmentação/RFM, Vendedores),
+seguidos de integração manual (rotas, menu, dados de demonstração, testes).
+
+**Módulo Clientes e Tags** (FSD 6.1, telas 12.3 e 12.16):
+- [x] `customers.service.js` / `customers.controller.js` — busca com filtros (nome, telefone, tag, RFM), paginação, ficha 360º, linha do tempo (vendas + mensagens unificadas), edição de campos complementares (nunca toca campos espelho do Uniplus), associação/remoção de tags.
+- [x] `tags.service.js` / `tags.controller.js` — CRUD com tratamento amigável de nome duplicado e de tag em uso (bloqueio por integridade referencial).
+- [x] Relatório de vendas sem cliente identificado, com filtro de período.
+- [x] Frontend: `ClientesList`, `ClienteFicha` (abas Visão Geral/Histórico/Campos Complementares), `RelatorioVendasSemCliente`, `Tags`.
+
+**Módulo Segmentação** (FSD 6.2, tela 12.4, seção 20):
+- [x] `rfm.service.js` — critérios RFM configuráveis (`system_settings`, chave `rfm_criteria`), sem valor padrão; recálculo fica "pendente" até o Administrador configurar pela primeira vez; edição dos critérios é exclusiva do Administrador (`requireAdmin`), recálculo manual liberado a qualquer usuário autenticado (decisão temporária documentada — na Fase 4 isso passa a rodar automaticamente após cada sincronização).
+- [x] `segments.service.js` / `segments.controller.js` — CRUD de segmentos dinâmicos + preview de clientes por filtro (categoria de produto, faixa de ticket médio, período da última compra, tags, segmento RFM). Filtro de bairro/cidade **não implementado**: a tabela `customers` não tem essas colunas no schema atual — não foi inventada coluna nova (limitação documentada em `segments.routes.md`).
+- [x] Frontend: `Segmentacao.jsx` (lista + CRUD + preview), `CriteriosRfm.jsx` (edição admin-only via `useAuth().isAdmin`, somente leitura para Acesso Limitado).
+
+**Módulo Vendedores** (FSD tela 12.11):
+- [x] `sellers.service.js` / `sellers.controller.js` — CRUD, ativar/desativar, e `getNextInRotation()` (consulta de qual seria o próximo vendedor da fila de rodízio, sem efetivar designação — o motor que efetivamente encaminha leads é a Fase 9).
+- [x] Frontend: `Vendedores.jsx` com destaque do próximo da fila.
+
+**Integração final:**
+- [x] Rotas registradas em `backend/app/main.js`, respeitando ordem de precedência do Express (rotas específicas como `/customers/reports/...`, `/segments/rfm/...` e `/sellers/rotation/next` registradas antes das rotas com `:id`).
+- [x] Novo componente `frontend/src/components/AppLayout.jsx` — menu lateral fixo + cabeçalho com usuário/logout, compartilhado por todas as telas autenticadas via rotas aninhadas do React Router (`<Outlet />`). Substituiu o header duplicado que existia em `Dashboard.jsx`.
+- [x] `Dashboard.jsx` reescrito com atalhos para os novos módulos.
+- [x] Nova rota de frontend `AdminRoute` (além da `ProtectedRoute` já existente), usada em `/users`.
+- [x] Script de dados de demonstração: `backend/app/database/seed-demo-data.js` — popula clientes, tags, vendedores, produtos, vendas e uma conversa de exemplo com o prefixo `DEMO-` (facilmente identificável e removível via `--clean`). Recusa-se a rodar com `NODE_ENV=production`. Não é parte do fluxo normal do sistema (o FSD proíbe cadastro manual de cliente pela interface) — é uma ferramenta de apoio à demonstração/desenvolvimento, executada manualmente.
+
+**Testes executados nesta sessão:**
+- [x] `node -c` em todos os arquivos `.js` novos/alterados do backend — sem erros de sintaxe.
+- [x] `npm install` no backend e no frontend — **encontrado e corrigido 1 bug real:** `jsonwebtoken@^9.1.2` no `package.json` (Fase 3) apontava para uma versão inexistente; corrigido para `^9.0.2` (última versão publicada da major 9).
+- [x] `npx vite build` no frontend — build de produção completo, sem erros (valida JSX, imports e resolução de módulos de todas as telas novas).
+- [x] Backend iniciado com `node app/main.js` — sobe sem erros, nenhuma rota mal ordenada quebra o Express.
+- [x] Testes end-to-end via `curl` com o servidor rodando: `GET /health` → 200 OK; `GET /customers`, `/sellers`, `/segments/rfm/criteria`, `/tags` sem sessão → 401 (middleware de autenticação protegendo corretamente as novas rotas).
+- [x] Validação estática: nomes de colunas usados em todos os `services` novos conferidos um a um contra as migrations reais (customers, sellers, dynamic_segments, system_settings, sales, sale_items, products, messages, conversations, tags, customer_tags) — nenhuma divergência encontrada.
+- [ ] **Não testado nesta sessão:** fluxo completo com PostgreSQL real (o sandbox não tem PostgreSQL disponível e não há acesso root para instalar). Recomenda-se ao responsável rodar localmente: `docker compose up --build`, depois `docker compose exec backend node app/database/migrate.js` e `docker compose exec backend node app/database/seed-demo-data.js` antes de demonstrar ao cliente.
 
 ## Checklist da Fase 3 (concluída em 07/08/2026)
 
@@ -97,18 +133,40 @@ Decisões técnicas tomadas nesta etapa (pontos que o `docs/FSD.md` deixava em a
 
 ## Fase atual
 
-**Fase 3 — Autenticação, sessão, controle de acesso e gestão de usuários: concluída em 07/08/2026.**
+**Fase 5 — Cadastro/visão 360º do cliente + Segmentação: concluída em 08/08/2026.**
 
 ## Próximo passo recomendado
 
-**Fase 4 está bloqueada** — precisa do mapeamento do schema real do banco do Uniplus.
+**Fase 4 permanece bloqueada** — precisa do mapeamento do schema real do banco do Uniplus. Não é a próxima fase sequencial, mas segue sem previsão até essa dependência ser resolvida.
 
-Após receber esse mapeamento, iniciar a **Fase 4 — Integração com o Uniplus (sincronização)**:
-- Job periódico que lê clientes, vendas, produtos e estoque do Uniplus (somente-leitura)
-- Atualiza tabelas-espelho do CRM Live
-- Recalcula RFM e atualiza segmentos dinâmicos
-- Aciona automações para novas vendas
-- Painel de status de sincronização
+Entre as fases não bloqueadas, a próxima é a **Fase 6 — Consentimento (LGPD) + Camada de mensageria e fila de envio**:
+- Modelo de consentimento (opt-in/opt-out) e bloqueio de envio sem consentimento válido
+- Fluxo de opt-out por palavra-chave (ex.: "SAIR")
+- Decisão final: `whatsapp-web.js` ou Baileys (pendência registrada desde a Fase 1)
+- Camada de abstração `integrations/whatsapp/`
+- Fila de envio com controle de cadência, limite diário/mensal e janela de horário
+- Relatório de consentimento (LGPD)
+
+Antes de demonstrar a Fase 5 ao cliente, rode o script de dados de demonstração
+(ver seção abaixo) para que as telas de Clientes e Segmentação não apareçam vazias.
+
+## Como Popular o Banco com Dados de Demonstração (para apresentar ao cliente)
+
+Como a sincronização real com o Uniplus (Fase 4) ainda está bloqueada, criamos um
+script isolado que insere clientes, vendedores, tags, produtos e vendas fictícios
+— todos com o prefixo `DEMO-` para ficarem claramente identificáveis:
+
+```bash
+docker compose exec backend node app/database/seed-demo-data.js
+```
+
+Para remover esses dados de demonstração depois (ex.: antes de ir para produção):
+
+```bash
+docker compose exec backend node app/database/seed-demo-data.js --clean
+```
+
+Esse script se recusa a rodar se `NODE_ENV=production`, como proteção extra.
 
 ## Configurações Necessárias Antes de Testar
 

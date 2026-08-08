@@ -117,20 +117,22 @@ Decisões técnicas tomadas durante a preparação do terreno (07/08/2026), para
 **Objetivo:** implementar os módulos 6.1 (ficha do cliente) e 6.2 (segmentação RFM e dinâmica).
 
 **Checklist:**
-- [ ] Lista de clientes com busca e filtros (segmento, tag, RFM).
-- [ ] Ficha 360º do cliente (dados cadastrais, histórico, ticket médio, frequência, linha do tempo).
-- [ ] Edição de campos complementares (aniversário, preferências, tags, canal preferido).
-- [ ] Relatório de vendas sem cliente identificado (tela 12.16).
-- [ ] Régua `first_identified_purchase` (incentivo ao cadastro — cupom + mensagem).
-- [ ] Classificação RFM configurável (critérios em `system_settings`, sem valor padrão).
-- [ ] Segmentos dinâmicos: criar/editar/salvar com filtros combináveis.
-- [ ] Cadastro/edição de vendedores e fila de rodízio (tela 12.11) — pré-requisito para leads na Fase 9, mas o CRUD básico cabe aqui.
-- [ ] Tags (CRUD simples).
+- [x] Lista de clientes com busca e filtros (segmento, tag, RFM).
+- [x] Ficha 360º do cliente (dados cadastrais, histórico, ticket médio, frequência, linha do tempo).
+- [x] Edição de campos complementares (aniversário, preferências, tags, canal preferido).
+- [x] Relatório de vendas sem cliente identificado (tela 12.16).
+- [ ] Régua `first_identified_purchase` (incentivo ao cadastro — cupom + mensagem). **Adiada para a Fase 7** (motor de réguas ainda não existe; implementar o CRUD isolado agora duplicaria trabalho quando a Fase 7 construir o motor de execução de réguas).
+- [x] Classificação RFM configurável (critérios em `system_settings`, sem valor padrão).
+- [x] Segmentos dinâmicos: criar/editar/salvar com filtros combináveis.
+- [x] Cadastro/edição de vendedores e fila de rodízio (tela 12.11) — CRUD e consulta da posição da fila prontos; o motor que efetivamente encaminha leads pela fila é a Fase 9.
+- [x] Tags (CRUD simples).
 
 **Critérios de pronto:**
-- Busca e filtros de clientes funcionam sobre dados sincronizados.
-- Segmento dinâmico salvo reflete corretamente os critérios aplicados.
-- RFM fica bloqueado/pendente até o Administrador definir os critérios pela primeira vez (sem valor padrão assumido).
+- Busca e filtros de clientes funcionam sobre dados sincronizados. ✅ (validado com dados de demonstração — ver seção de seed abaixo; dados reais chegam na Fase 4)
+- Segmento dinâmico salvo reflete corretamente os critérios aplicados. ✅
+- RFM fica bloqueado/pendente até o Administrador definir os critérios pela primeira vez (sem valor padrão assumido). ✅ (`POST /segments/rfm/recalculate` retorna `status: 'pending_configuration'` enquanto não houver critério salvo)
+
+**Concluída em 08/08/2026.** Ver checklist detalhado e decisões de implementação em `docs/STATUS.md`.
 
 **Arquivos/pastas prováveis:** `backend/app/controllers/customers*`, `segments*`, `sellers*`, `tags*`; `frontend/src/views/Clientes`, `Segmentacao`, `Vendedores`.
 

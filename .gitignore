@@ -17,6 +17,7 @@ backend/app/storage/whatsapp-session/
 # Build do frontend
 frontend/dist/
 frontend/.vite/
+frontend/vite.config.js.timestamp-*.mjs
 
 # Sistema operacional
 .DS_Store

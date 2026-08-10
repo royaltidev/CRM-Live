@@ -28,7 +28,7 @@ Decisões técnicas tomadas nesta etapa (pontos que o `docs/FSD.md` deixava em a
 | 1 | Infraestrutura e base do projeto | ✅ Concluída |
 | 2 | Banco de dados e persistência | ✅ Concluída |
 | 3 | Autenticação, sessão, controle de acesso e gestão de usuários | ✅ Concluída |
-| 4 | Integração com o Uniplus (sincronização) | 🚫 Bloqueada (schema do Uniplus não mapeado) |
+| 4 | Integração com o Uniplus (sincronização) | ⏳ Não iniciada (schema mapeado em 08/08/2026 — ver `docs/uniplus-schema/`) |
 | 5 | Cadastro/visão 360º do cliente + Segmentação | ✅ Concluída |
 | 6 | Consentimento (LGPD) + camada de mensageria | ✅ Concluída |
 | 7 | Réguas de relacionamento (automações) | ⏳ Não iniciada |
@@ -181,9 +181,15 @@ seguidos de integração manual (rotas, menu, dados de demonstração, testes).
 
 ## Próximo passo recomendado
 
-**Fase 4 permanece bloqueada** — precisa do mapeamento do schema real do banco do Uniplus. Não é a próxima fase sequencial, mas segue sem previsão até essa dependência ser resolvida.
+**Fase 4 não está mais bloqueada.** O mapeamento do schema real do banco do Uniplus foi concluído em 08–10/08/2026: 12 tabelas de origem (`dav`, `davitem`, `entidade`, `filial`, `hierarquia`, `item`, `notafiscal`, `notafiscalitem`, `operacao_nfce_view`, `produto`, `produtoean`, `saldoestoque`) e colunas confirmadas para 11 delas (falta `item`, ver pendência abaixo), junto com regras de negócio essenciais para a sincronização (papéis multi-flag de `entidade`, categoria de produto via `hierarquia`, e a regra de deduplicação de vendas DAV × Nota Fiscal via `dav.idnotafiscal`). Ver `docs/uniplus-schema/` (arquivos 01 a 04) para o detalhamento completo.
 
-Entre as fases não bloqueadas, a próxima é a **Fase 7 — Réguas de relacionamento (automações)**:
+Duas decisões de negócio foram tomadas em 10/08/2026, revisadas com o responsável antes de iniciar a implementação:
+- `sales` ganha a coluna `source_type` (`dav`/`nota_fiscal`) para permitir segmentar relatórios de vendas por origem.
+- A validação de WhatsApp na sincronização passa a ser ativa: a sincronização testa `entidade.whatsapp`, depois `entidade.celular`, depois `entidade.telefone`, checando cada um contra o próprio WhatsApp (nova capacidade a construir na camada de mensageria da Fase 6) e só grava em `customers.phone_e164`/`whatsapp_validated=true` o primeiro que for confirmado como tendo conta ativa.
+
+**Pendência que ainda bloqueia o fechamento total do mapeamento:** as colunas da tabela `item` não foram confirmadas (só as de `produto`). O responsável confirmou que `item` tem papel próprio (não é redundante com `produto`) e vai enviar a lista de colunas. A implementação da Fase 4 em si (job de sincronização, painel de status) ainda não foi iniciada — o plano de arquitetura será apresentado para aprovação antes de começar a codar.
+
+Entre as fases não iniciadas, a próxima pendente de decisão é a **Fase 7 — Réguas de relacionamento (automações)**:
 - Motor de réguas (gatilho + condição + ação), com bloqueio de ativação sem modelo de mensagem associado
 - Réguas específicas: agradecimento pós-venda, aniversário, lembrete de recompra, NPS, reativação (win-back) em cascata, aviso de volta ao estoque
 - Régua `first_identified_purchase` (adiada da Fase 5 — ver checklist da Fase 5)
@@ -235,7 +241,6 @@ Copie o valor para `backend/app/config/settings.js` > `session.secret`
 
 ## Pendências que não bloqueiam a Fase 2, mas precisam ser resolvidas antes das fases indicadas
 
-- **Mapeamento do schema do Uniplus** — bloqueia a Fase 4 (sincronização). Ver `docs/FSD.md`, seção 27.
 - **Biblioteca de automação do WhatsApp Web** (`whatsapp-web.js` vs. Baileys) — decisão necessária antes da Fase 6.
 - **Uso das variantes de logomarca** ainda não confirmadas (`logo-oval-branca`, `logo-oval-monocromatica`, `avatar-1024.png`, `preview-branca-fundo-escuro.png`) — confirmar com o responsável antes de aplicá-las a alguma tela (relevante a partir da Fase 3, quando as primeiras telas reais forem construídas).
 - **Estratégia de backup** da base de dados do CRM Live (RNF-07) — a definir antes da entrega em produção (Fase Final).

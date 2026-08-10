@@ -89,13 +89,16 @@ Decisões técnicas tomadas durante a preparação do terreno (07/08/2026), para
 
 ---
 
-## Fase 4 — Integração com o Uniplus (sincronização) ⚠️ BLOQUEADA
+## Fase 4 — Integração com o Uniplus (sincronização)
 
 **Objetivo:** sincronizar clientes, vendas, produtos e estoque do Uniplus para as tabelas-espelho do CRM Live, somente leitura, com painel de status.
 
 **Checklist:**
 - [ ] Job de sincronização periódica (polling parametrizável).
-- [ ] Mapeamento de campos do schema real do Uniplus para as tabelas-espelho (`customers`, `sales`, `sale_items`, `products`, `stock_snapshots`).
+- [x] Mapeamento de campos do schema real do Uniplus para as tabelas-espelho (`customers`, `sales`, `sale_items`, `products`, `stock_snapshots`) — concluído em 08/08/2026, ver `docs/uniplus-schema/`. Pendência residual: colunas da tabela `item` ainda não confirmadas.
+- [ ] Migration: adicionar `sales.source_type` (enum `dav`/`nota_fiscal`) e `sales.uniplus_id` prefixado por origem.
+- [ ] Regra de deduplicação de vendas DAV × Nota Fiscal (`dav.idnotafiscal IS NULL` para sincronizar o DAV).
+- [ ] Nova capacidade na camada de mensageria (`backend/app/integrations/whatsapp/`) para checar se um número tem conta WhatsApp válida (`client.getNumberId`), usada pela sincronização para validar `whatsapp`/`celular`/`telefone` de `entidade`, nessa ordem.
 - [ ] Registro de execução em `sync_runs` (registros importados por entidade, erros).
 - [ ] Recalculo de RFM e atualização de segmentos dinâmicos após cada sincronização.
 - [ ] Disparo de automações relacionadas a novas vendas e mudanças de estoque.
@@ -108,7 +111,7 @@ Decisões técnicas tomadas durante a preparação do terreno (07/08/2026), para
 
 **Arquivos/pastas prováveis:** `backend/app/jobs/sync*`, `backend/app/integrations/uniplus/`, `frontend/src/views/StatusSincronizacao`.
 
-**Observações de dependência:** **bloqueada pela pendência registrada no FSD seção 27** — o mapeamento do schema real do banco do Uniplus ainda não foi levantado (o repositório `https://github.com/lifangbiz/dbskill` foi confirmado como não sendo essa fonte). Esta fase não deve ser iniciada antes de esse mapeamento ser obtido do responsável do projeto. As fases 1–3 não dependem deste ponto.
+**Observações de dependência:** não bloqueada mais. O mapeamento do schema real do Uniplus foi concluído em 08/08/2026 (12 tabelas, ~103 colunas confirmadas, regras de deduplicação DAV × Nota Fiscal e demais decisões de negócio documentadas em `docs/uniplus-schema/01` a `04`). A implementação desta fase (job de sincronização, tradução das colunas de origem para as tabelas-espelho, painel de status) ainda não foi iniciada.
 
 ---
 

@@ -31,12 +31,69 @@ Decisões técnicas tomadas nesta etapa (pontos que o `docs/FSD.md` deixava em a
 | 4 | Integração com o Uniplus (sincronização) | ✅ Concluída |
 | 5 | Cadastro/visão 360º do cliente + Segmentação | ✅ Concluída |
 | 6 | Consentimento (LGPD) + camada de mensageria | ✅ Concluída |
-| 7 | Réguas de relacionamento (automações) | ⏳ Não iniciada |
+| 7 | Réguas de relacionamento (automações) | ✅ Concluída |
 | 8 | Campanhas, templates, cupons, giftback, uploads | ⏳ Não iniciada |
 | 9 | Atendimento (caixa de entrada) e leads | ⏳ Não iniciada |
 | 10 | Gestão de satisfação (NPS) | ⏳ Não iniciada |
 | 11 | Relatórios, dashboards e exportações | ⏳ Não iniciada |
 | Final | Itens transversais, segurança, qualidade, deploy | ⏳ Não iniciada |
+
+## Checklist da Fase 7 (concluída em 10/08/2026)
+
+Construída com o orquestrador implementando o motor central (para garantir
+que todas as réguas compartilhem a mesma lógica de dedup/consentimento) e
+3 subagentes em paralelo consumindo esse motor já pronto e testado (réguas
+orientadas a tempo; réguas orientadas a evento + cupom de boas-vindas;
+frontend + tela de elegíveis do win-back), seguidos de integração manual.
+
+**Decisões tomadas com o responsável antes de codar (10/08/2026):**
+- Templates de mensagem: como o CRUD completo é escopo da Fase 8 (ainda não
+  construído), 2-3 templates de demonstração foram semeados em
+  `seed-demo-data.js` para a tela de Réguas ficar demonstrável.
+- Régua "aviso de volta ao estoque": **adiada**. Não existe tabela de
+  interesse/wishlist no modelo de dados, e "interação" (chat) só existirá na
+  Fase 9. O hook `notifyStockReplenished` (stub desde a Fase 4) permanece
+  como stub.
+
+**Motor central** (`backend/app/services/rules-engine.service.js`, construído e
+testado pelo orquestrador antes de dividir o trabalho):
+- [x] `getActiveRulesByTrigger(triggerType)` e `attemptRuleExecution({ ruleId, customerId, triggerReference, templateVariables, npsSaleId })` — dedup (checagem explícita + constraint UNIQUE como rede de segurança), consentimento (via `message-queue.service.enqueueMessage`, reaproveitado da Fase 6), renderização de template (`{{variavel}}`), criação/reuso de conversa, registro em `automation_rule_executions`, e gravação automática em `nps_responses` quando a régua é `nps_survey`.
+- [x] `automation-rules.service.js` — CRUD de réguas + bloqueio de ativação sem `message_template_id` + leitura de templates ativos (sem CRUD de templates — Fase 8).
+- [x] `automation-settings.service.js` — `nps_survey_delay_minutes` (padrão 30, semeado), `nps_low_score_threshold` (padrão 6, semeado), `welcome_coupon_discount_percent` (sem padrão — `pending_configuration`).
+- [x] `conversations.service.js` — helper mínimo (`getOrCreateConversationForCustomer`), necessário porque `messages.conversation_id` é NOT NULL e nada criava conversas antes desta fase. Ciclo completo de atendimento é Fase 9.
+- [x] Testado com harness offline (mock de `crmPool`): 7 cenários (envio feliz, deduplicação, sem consentimento, listagem de réguas ativas, criação de régua inativa, bloqueio de ativação sem template, rejeição de trigger_type inválido) — todos passaram.
+
+**Réguas orientadas a tempo** (`time-based-rules.service.js` + `automation-rules.job.js`, a cada 5 min):
+- [x] Aniversário — `trigger_reference` inclui o ano, garante no máximo 1 envio/cliente/ano.
+- [x] Reativação (win-back) em cascata — dias por etapa configurados na própria régua (`conditions.days`, `cascadeStep`), NÃO em Configurações globais (é o padrão que a FSD define para esta régua especificamente). `trigger_reference` inclui `last_purchase_at`: uma nova compra fecha o ciclo automaticamente, sem tabela de estado separada.
+- [x] Lembrete de recompra por ciclo de consumo — por produto específico (`conditions.productId`/`conditions.days`), mesmo mecanismo de fechamento de ciclo do win-back.
+- [x] Pesquisa de satisfação (NPS) — atraso vem de `system_settings` (não da régua, conforme FSD 12.13); janela de segurança de 2 dias para não disparar uma avalanche de pesquisas para vendas antigas na primeira ativação.
+- [x] `listWinbackEligibleCustomers({ruleId})` / `manualResendWinback({ruleId, customerId})` — usados pela tela de clientes elegíveis; reenvio manual sempre permitido (ignora o dedup do ciclo automático, mas passa pelo motor normalmente — ainda audita e respeita consentimento).
+- [x] Testado com harness offline: 14 cenários (aniversário, win-back com/sem elegibilidade, NPS respeitando janela de atraso, ciclo de consumo, reenvio manual, job continuando após uma verificação falhar) — todos passaram.
+- **Limitação conhecida:** win-back não tem corte superior de inatividade — um cliente inativo há anos é elegível para a etapa de 30 dias na primeira ativação da régua (o dedup por ciclo evita reenvio, mas a primeira varredura pode alcançar toda a base inativa de uma vez). Não é bug, é a semântica pedida pela FSD; se quiserem um teto (`conditions.maxDays`), é uma decisão de negócio a tomar depois.
+
+**Réguas orientadas a evento** (`automation-trigger.service.notifyNewSales`, chamado pela sincronização — Fase 4):
+- [x] Agradecimento pós-venda — diferencia primeira compra de recorrente via `conditions.isFirstPurchase` na régua (ausente = aplica a qualquer venda).
+- [x] Incentivo ao cadastro (`first_identified_purchase`) — só na primeira compra identificada; gera cupom (`welcome-coupon.service.js`, código único prefixado `BEMVINDO-`, `discount_type='percent'`, `valid_until=NULL` — a FSD não define prazo de validade, então não foi inventado nenhum) só se o percentual estiver configurado; senão pula silenciosamente (`pending_configuration`).
+- [x] Testado com harness offline: 13 cenários (primeira compra vs. recorrente, percentual pendente, colisão de código de cupom, venda sem cliente, erro isolado por venda) — todos passaram.
+- **Limitação conhecida:** o cupom é gerado ANTES da checagem de deduplicação do motor. Como `sync.service.js` só chama este hook para vendas genuinamente novas (nunca reprocessa), o risco de cupom órfão é baixo na prática, mas existe em teoria se essa invariante for quebrada no futuro — vale revisitar se `automation-trigger.service.js` for reaproveitado em outro contexto.
+
+**Frontend e integração:**
+- [x] `Reguas.jsx` — CRUD com formulário de condições dinâmico por gatilho, filtros, toggle ativar/desativar com tratamento do bloqueio (409). Gatilho `stock_replenished` removido do seletor (régua adiada).
+- [x] `ReguasWinbackElegiveis.jsx` — lista de elegíveis, filtro por dias mínimos, reenvio manual, link para a ficha do cliente.
+- [x] `winback.controller.js` — `GET /winback/eligible`, `POST /winback/resend`.
+- [x] Rotas registradas em `main.js`: `GET/POST/PATCH /automation-rules*`, `GET /winback/eligible`, `POST /winback/resend` (ordem correta: `/automation-rules/templates/active` antes de `/automation-rules/:id`).
+- [x] `startAutomationRulesJob()` chamado no callback de `app.listen(...)`.
+- [x] Menu lateral atualizado com "Réguas de Relacionamento"; rotas `/reguas` e `/reguas/winback/:ruleId` em `App.jsx`.
+- [x] Migration `031_seed_default_automation_settings.js` — semeia `nps_survey_delay_minutes` (30) e `nps_low_score_threshold` (6), ambos com padrão definido no FSD. `welcome_coupon_discount_percent` intencionalmente NÃO semeado (sem padrão no FSD).
+
+**Testes executados nesta sessão:**
+- [x] `node -c` em todos os `.js` novos/alterados — sem erros.
+- [x] Testes com mock de `crmPool`/serviços (sem PostgreSQL real, indisponível no sandbox): motor central (7 cenários), réguas de tempo (14 cenários), réguas de evento + cupom (13 cenários) — 34 cenários no total, todos passando.
+- [x] `node app/main.js` rodando de verdade: servidor sobe, job de réguas inicia ("a cada 5 min"), as 4 verificações de tempo falham graciosamente por falta de banco real (esperado fora do Docker) sem derrubar o processo.
+- [x] `curl`: `GET /health` → 200; todas as rotas novas sem sessão → 401.
+- [x] `npx vite build` — build de produção completo, sem erros (947 módulos).
+- [ ] **Não testado nesta sessão** (exige PostgreSQL real): execução de ponta a ponta do job contra dados reais, envio efetivo de mensagem via WhatsApp conectado, geração de cupom com percentual configurado.
 
 ## Checklist da Fase 4 (concluída em 10/08/2026)
 
@@ -238,17 +295,25 @@ seguidos de integração manual (rotas, menu, dados de demonstração, testes).
 
 ## Fase atual
 
-**Fase 4 — Integração com o Uniplus (sincronização): concluída em 10/08/2026.**
+**Fase 7 — Réguas de relacionamento (automações): concluída em 10/08/2026.**
 
 ## Próximo passo recomendado
 
-Entre as fases não iniciadas, a próxima pendente de decisão é a **Fase 7 — Réguas de relacionamento (automações)**:
-- Motor de réguas (gatilho + condição + ação), com bloqueio de ativação sem modelo de mensagem associado
-- Réguas específicas: agradecimento pós-venda, aniversário, lembrete de recompra, NPS, reativação (win-back) em cascata, aviso de volta ao estoque
-- Régua `first_identified_purchase` (adiada da Fase 5 — ver checklist da Fase 5)
-- Tela de clientes elegíveis por etapa do win-back
-- Conectar o hook `automation-trigger.service.js` (stub criado na Fase 4) ao motor real
-- Conectar `processInboundOptOutKeyword` (pronto desde a Fase 6) a um fluxo real de mensagem recebida
+Entre as fases não iniciadas, a próxima sequencial é a **Fase 8 — Campanhas, modelos de mensagem, cupons, giftback e uploads**:
+- CRUD completo de modelos de mensagem (templates), incluindo upload de imagem — hoje só existem os templates de demonstração semeados na Fase 7
+- CRUD de cupons e giftback/cashback
+- Cross-sell (produtos complementares) e a régua/gatilho automático pós-compra
+- Campanhas manuais (segmento + template + agendamento)
+
+**Pendências que a Fase 8 herda da Fase 7:**
+- Réguas hoje só podem usar os templates de demonstração (prefixo "Demo:") até o CRUD real existir.
+- Régua "aviso de volta ao estoque" continua adiada (falta definição de "interesse" — provavelmente resolvida quando a Fase 9 trouxer interações reais).
+
+**Antes de operar a Fase 7 em produção**, é necessário:
+1. Rodar a migration `031_seed_default_automation_settings.js` no banco real.
+2. Configurar `system_settings.welcome_coupon_discount_percent` se quiserem usar a régua de incentivo ao cadastro (sem padrão, fica bloqueada até configurar).
+3. Criar/ativar as réguas desejadas pela tela (nenhuma vem pré-ativada).
+4. Ter a sessão do WhatsApp conectada (Fase 6) e a sincronização rodando (Fase 4) para que as réguas tenham dado real para trabalhar.
 
 **Antes de operar a Fase 4 em produção**, é necessário:
 1. Rodar a migration `030_add_source_type_to_sales.js` no banco real (`node app/database/migrate.js`).

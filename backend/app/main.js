@@ -19,10 +19,13 @@ const sellersController = require('./controllers/sellers.controller');
 const consentController = require('./controllers/consent.controller');
 const messagesController = require('./controllers/messages.controller');
 const syncController = require('./controllers/sync.controller');
+const automationRulesController = require('./controllers/automation-rules.controller');
+const winbackController = require('./controllers/winback.controller');
 const { requireAuth, requireAdmin } = require('./middleware/auth.middleware');
 const whatsapp = require('./integrations/whatsapp');
 const { startMessageQueueJob } = require('./jobs/message-queue.job');
 const { startUniplusSyncJob } = require('./jobs/uniplus-sync.job');
+const { startAutomationRulesJob } = require('./jobs/automation-rules.job');
 
 const app = express();
 
@@ -111,6 +114,21 @@ app.get('/messages', requireAuth, messagesController.listMessages);
 app.get('/sync/runs', requireAuth, syncController.listSyncRunsHandler);
 app.post('/sync/run', requireAuth, syncController.triggerManualSyncHandler);
 
+// ===== Rotas de Réguas de Relacionamento / Automações (Fase 7) =====
+
+// IMPORTANTE: '/automation-rules/templates/active' precisa vir antes de
+// '/automation-rules/:id', senão o Express interpretaria "templates" como
+// um :id (mesmo cuidado já aplicado em /customers, /segments, /sellers).
+app.get('/automation-rules', requireAuth, automationRulesController.listRules);
+app.get('/automation-rules/templates/active', requireAuth, automationRulesController.listActiveTemplates);
+app.get('/automation-rules/:id', requireAuth, automationRulesController.getRuleById);
+app.post('/automation-rules', requireAuth, automationRulesController.createRule);
+app.patch('/automation-rules/:id', requireAuth, automationRulesController.updateRule);
+app.patch('/automation-rules/:id/toggle-active', requireAuth, automationRulesController.toggleRuleActive);
+
+app.get('/winback/eligible', requireAuth, winbackController.listEligible);
+app.post('/winback/resend', requireAuth, winbackController.resend);
+
 // ===== Tratamento de Erros Genérico =====
 
 app.use((err, req, res, next) => {
@@ -145,4 +163,10 @@ app.listen(settings.port, () => {
   // nem derruba o processo em caso de falha — ver
   // backend/app/jobs/uniplus-sync.job.js e backend/app/services/sync.service.js.
   startUniplusSyncJob();
+
+  // Inicia o motor de réguas de relacionamento (aniversário, reativação,
+  // ciclo de recompra, pesquisa de satisfação — a cada 5 min). Réguas
+  // orientadas a evento (venda nova, incentivo ao cadastro) são acionadas
+  // diretamente pela sincronização, via automation-trigger.service.js.
+  startAutomationRulesJob();
 });

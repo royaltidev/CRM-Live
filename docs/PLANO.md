@@ -178,25 +178,28 @@ Decisões técnicas tomadas durante a preparação do terreno (07/08/2026), para
 **Objetivo:** implementar o módulo 6.3 — motor de réguas e cada régua específica.
 
 **Checklist:**
-- [ ] CRUD de réguas (gatilho + condição + ação), tela 12.5.
-- [ ] Bloqueio de ativação sem modelo de mensagem associado.
-- [ ] Constraint/verificação de não duplicidade (`automation_rule_executions`).
-- [ ] Régua de agradecimento pós-venda (primeira compra vs. recorrente).
-- [ ] Régua de aniversário com oferta opcional.
-- [ ] Régua de lembrete de recompra por ciclo de consumo.
-- [ ] Régua de NPS (disparo 30 min após compra, prazo parametrizável).
-- [ ] Régua de reativação (win-back) em cascata, com encerramento automático ao voltar a comprar.
-- [ ] Tela de clientes elegíveis por etapa do win-back, com filtro por tempo sem comprar e reenvio manual.
-- [ ] Régua de aviso de volta ao estoque.
+- [x] CRUD de réguas (gatilho + condição + ação), tela 12.5.
+- [x] Bloqueio de ativação sem modelo de mensagem associado.
+- [x] Constraint/verificação de não duplicidade (`automation_rule_executions`) — checagem explícita antes de executar, mais a constraint UNIQUE como rede de segurança contra corrida entre execuções do job.
+- [x] Régua de agradecimento pós-venda (primeira compra vs. recorrente) — orientada a evento, acionada pela sincronização (Fase 4).
+- [x] Régua de aniversário — job periódico (a cada 5 min), dispara 1x/ano por cliente.
+- [x] Régua de lembrete de recompra por ciclo de consumo — por produto específico, configurado na própria régua (`conditions.productId`/`conditions.days`).
+- [x] Régua de NPS (disparo 30 min após compra, prazo parametrizável em `system_settings`, não na régua — conforme FSD 12.13). Grava automaticamente em `nps_responses` ao enviar.
+- [x] Régua de reativação (win-back) em cascata, com encerramento automático ao voltar a comprar (mecanismo: `trigger_reference` inclui `last_purchase_at`, então uma nova compra "fecha" o ciclo sem precisar de tabela de estado separada).
+- [x] Tela de clientes elegíveis por etapa do win-back, com filtro por tempo sem comprar e reenvio manual (`GET /winback/eligible`, `POST /winback/resend`).
+- [ ] ~~Régua de aviso de volta ao estoque~~ **Adiada para uma fase futura** (decisão do responsável em 10/08/2026): a FSD exige saber quais clientes têm "interesse" num produto (compra anterior OU interação), mas não existe tabela de interesse/wishlist, e "interação" só existe a partir da Fase 9 (atendimento). O hook `automation-trigger.service.notifyStockReplenished` já existe (stub desde a Fase 4) para quando essa régua for retomada.
+- [x] **Adicional não previsto na checklist original, necessário para o motor funcionar:** régua de incentivo ao cadastro (`first_identified_purchase`, FSD 6.1) — gera cupom via `welcome-coupon.service.js` (percentual configurável em `system_settings`, sem valor padrão) e envia mensagem com o código.
+- [x] **Adicional:** `conversations.service.js` — helper mínimo de conversa por cliente (`getOrCreateConversationForCustomer`), necessário porque `messages.conversation_id` é NOT NULL e nenhuma conversa era criada automaticamente antes desta fase. O ciclo completo de atendimento (caixa de entrada) continua sendo a Fase 9.
+- [x] **Adicional:** 2-3 templates de mensagem de demonstração semeados em `seed-demo-data.js` (decisão do responsável em 10/08/2026) — o CRUD completo de templates continua sendo a Fase 8; sem isso a tela de Réguas ficaria sem nenhum modelo para selecionar.
 
 **Critérios de pronto:**
-- Nenhuma régua gera envio duplicado para o mesmo evento.
-- Régua de reativação para automaticamente quando o cliente compra novamente.
-- Todas as réguas passam pela verificação de consentimento antes de enviar (Fase 6).
+- [x] Nenhuma régua gera envio duplicado para o mesmo evento.
+- [x] Régua de reativação para automaticamente quando o cliente compra novamente.
+- [x] Todas as réguas passam pela verificação de consentimento antes de enviar (Fase 6) — centralizado no motor (`rules-engine.service.js`), que reaproveita `message-queue.service.enqueueMessage`.
 
-**Arquivos/pastas prováveis:** `backend/app/services/automation-rules/`, `backend/app/jobs/rules*`, `frontend/src/views/Reguas`.
+**Arquivos:** `backend/app/services/rules-engine.service.js` (motor central), `automation-rules.service.js` (CRUD), `automation-settings.service.js` (parâmetros globais), `time-based-rules.service.js` (réguas de tempo), `welcome-coupon.service.js`, `conversations.service.js`; `backend/app/jobs/automation-rules.job.js`; `backend/app/controllers/automation-rules.controller.js`, `winback.controller.js`; `frontend/src/views/Reguas/`.
 
-**Observações de dependência:** depende da Fase 6 (mensageria/consentimento) e da Fase 4 (dados de venda/estoque sincronizados) para funcionar de ponta a ponta; a modelagem e o CRUD de réguas podem avançar em paralelo à Fase 4.
+**Status:** implementada e testada em 10/08/2026 — construída com o orquestrador fazendo o motor central e 3 subagentes em paralelo (réguas de tempo; réguas de evento + cupom; frontend). Ver `docs/STATUS.md` para o detalhamento de testes e limitações conhecidas.
 
 ---
 

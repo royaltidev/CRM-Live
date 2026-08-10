@@ -56,6 +56,13 @@ async function cleanDemoData() {
   await crmPool.query(`DELETE FROM products WHERE uniplus_id LIKE 'DEMO-%'`);
   await crmPool.query(`DELETE FROM sellers WHERE uniplus_seller_id LIKE 'DEMO-%'`);
   await crmPool.query(`DELETE FROM tags WHERE name LIKE 'Demo: %'`);
+  // Réguas (automation_rules) que porventura referenciem um template demo
+  // precisam ser desvinculadas antes de apagar o template (FK RESTRICT).
+  await crmPool.query(`
+    UPDATE automation_rules SET message_template_id = NULL, active = false
+     WHERE message_template_id IN (SELECT id FROM message_templates WHERE name LIKE 'Demo: %')
+  `);
+  await crmPool.query(`DELETE FROM message_templates WHERE name LIKE 'Demo: %'`);
 
   console.log('✓ Dados de demonstração removidos.');
 }
@@ -107,6 +114,66 @@ async function seed() {
     productIds.push(result.rows[0].id);
   }
   console.log(`✓ ${products.length} produtos de demonstração criados`);
+
+  // --- Modelos de mensagem (templates) para demonstrar a Fase 7 (Réguas) ---
+  // O CRUD completo de templates (upload de imagem, edição pela UI) é
+  // escopo da Fase 8, ainda não construído. Sem nenhum template cadastrado,
+  // a tela de Réguas fica sem nada para selecionar — por isso este script
+  // semeia alguns modelos de exemplo (decisão registrada em docs/STATUS.md,
+  // Fase 7). `message_templates.created_by` é NOT NULL: como usuários só
+  // existem via login OAuth real (Fase 3), usamos o primeiro usuário
+  // encontrado; se ainda não houver nenhum (banco recém-criado, ninguém
+  // logou ainda), os templates são pulados com um aviso — não inventamos um
+  // usuário fictício para satisfazer a constraint.
+  const firstUserResult = await crmPool.query('SELECT id FROM users ORDER BY id LIMIT 1');
+  const templateOwnerId = firstUserResult.rows[0] ? firstUserResult.rows[0].id : null;
+  const templateIds = {};
+
+  if (templateOwnerId) {
+    const templates = [
+      {
+        key: 'agradecimento_pos_venda',
+        name: 'Demo: Agradecimento pós-venda',
+        bodyText: 'Olá {{nome}}! Obrigado pela sua compra 😊 Qualquer dúvida, estamos à disposição.',
+        variables: ['nome'],
+      },
+      {
+        key: 'aniversario',
+        name: 'Demo: Aniversário',
+        bodyText: 'Parabéns, {{nome}}! 🎉 Preparamos uma condição especial para você comemorar com a gente.',
+        variables: ['nome'],
+      },
+      {
+        key: 'reativacao',
+        name: 'Demo: Reativação (win-back)',
+        bodyText: 'Sentimos sua falta, {{nome}}! Que tal aproveitar uma condição especial na sua próxima compra?',
+        variables: ['nome'],
+      },
+      {
+        key: 'boas_vindas_cupom',
+        name: 'Demo: Boas-vindas com cupom',
+        bodyText: 'Seja bem-vindo(a), {{nome}}! Use o cupom {{cupom}} na sua próxima compra e ganhe desconto especial.',
+        variables: ['nome', 'cupom'],
+      },
+    ];
+
+    for (const t of templates) {
+      const result = await crmPool.query(
+        `INSERT INTO message_templates (name, body_text, variables, active, created_by)
+         VALUES ($1, $2, $3::jsonb, true, $4)
+         RETURNING id`,
+        [t.name, t.bodyText, JSON.stringify(t.variables), templateOwnerId]
+      );
+      templateIds[t.key] = result.rows[0].id;
+    }
+    console.log(`✓ ${templates.length} modelos de mensagem de demonstração criados (Fase 7 — Réguas)`);
+  } else {
+    console.log(
+      '⚠ Nenhum usuário encontrado — modelos de mensagem de demonstração foram pulados. ' +
+        'Faça login pelo menos uma vez e rode o seed novamente (ou crie templates manualmente ' +
+        'via SQL) para popular a tela de Réguas com opções de modelo.'
+    );
+  }
 
   // --- Clientes ---
   // Datas relativas a hoje, para demonstrar diferentes faixas de RFM quando o

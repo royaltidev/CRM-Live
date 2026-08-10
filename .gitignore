@@ -18,6 +18,7 @@ backend/app/storage/whatsapp-session/
 frontend/dist/
 frontend/dist.old*/
 frontend/dist_test/
+frontend/*.unused_delete_me
 frontend/.vite/
 frontend/vite.config.js.timestamp-*.mjs
 

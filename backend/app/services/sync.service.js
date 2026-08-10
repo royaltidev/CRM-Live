@@ -815,7 +815,13 @@ function loadWhatsappIntegration() {
 }
 
 async function syncWhatsappValidation(context) {
-  const result = { validated: 0, attempted: 0, sessionUnavailable: false, skipped: false };
+  const result = {
+    validated: 0,
+    attempted: 0,
+    candidateErrors: 0,
+    sessionUnavailable: false,
+    skipped: false,
+  };
 
   const whatsapp = loadWhatsappIntegration();
   if (!whatsapp) {
@@ -856,7 +862,17 @@ async function syncWhatsappValidation(context) {
   const CANDIDATE_FIELDS = ['whatsapp', 'celular', 'telefone'];
 
   // Devolve o primeiro número com conta WhatsApp, ou null.
-  // Propaga Error('whatsapp_not_connected') para o chamador interromper tudo.
+  // Propaga Error('whatsapp_not_connected') para o chamador interromper tudo
+  // (sessão inteira fora do ar — não adianta tentar mais nada). Qualquer
+  // OUTRO erro (ex.: número malformado, falha pontual do Puppeteer para
+  // aquele número específico) é tratado como "este candidato não pôde ser
+  // verificado agora" — conta em `result.candidateErrors` e segue para o
+  // próximo candidato/cliente, em vez de abortar a execução inteira.
+  //
+  // Isso evita um efeito "cabeça de fila travada": como a consulta de
+  // pendentes é sempre ORDER BY id, um único registro com número
+  // problemático pararia de vez a validação de todos os que vêm depois dele,
+  // em toda execução futura, se um erro qualquer abortasse o laço inteiro.
   async function findValidNumber(candidates) {
     if (!candidates) {
       return null;
@@ -869,7 +885,18 @@ async function syncWhatsappValidation(context) {
       }
 
       result.attempted += 1;
-      const status = await whatsapp.checkNumberStatus(phone);
+
+      let status;
+      try {
+        status = await whatsapp.checkNumberStatus(phone);
+      } catch (err) {
+        if (err && err.message === WHATSAPP_NOT_CONNECTED) {
+          throw err;
+        }
+        result.candidateErrors += 1;
+        continue;
+      }
+
       if (status && status.hasWhatsapp) {
         return phone;
       }
@@ -1133,6 +1160,16 @@ async function executeSync({ triggeredBy }) {
         'whatsapp_validation',
         'Sessão do WhatsApp não conectada (whatsapp_not_connected). Validação de números ' +
           'interrompida nesta execução e adiada para a próxima.'
+      );
+    }
+
+    if (whatsappResult.candidateErrors > 0) {
+      recordsImported.whatsapp_candidate_errors = whatsappResult.candidateErrors;
+      addWarning(
+        'whatsapp_validation',
+        `${whatsappResult.candidateErrors} candidato(s) a telefone não puderam ser verificados ` +
+          '(erro pontual, não a sessão inteira) — o cliente/vendedor segue para o próximo ' +
+          'candidato ou para a próxima execução, sem travar a validação dos demais.'
       );
     }
   } catch (err) {

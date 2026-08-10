@@ -178,6 +178,20 @@ esse número em `customers.phone_e164`/`sellers.whatsapp_phone` com
 WhatsApp estiver indisponível), grava `whatsapp_validated = false` e tenta
 de novo na próxima execução do job (não é um estado permanente).
 
+**Tratamento de erro por candidato (correção de 10/08/2026, pós-implementação):**
+`checkNumberStatus` pode lançar `Error('whatsapp_not_connected')` (sessão
+inteira fora do ar — aborta a validação da execução inteira, comportamento
+já descrito acima) ou, em tese, qualquer outro erro pontual (número
+malformado, falha transitória do Puppeteer para aquele número específico).
+Esse segundo caso **não** pode abortar a validação inteira: como a consulta
+de pendentes é `ORDER BY id`, um único registro problemático travaria a
+validação de todos os que vêm depois dele em **toda execução futura**
+(efeito "cabeça de fila travada", já que o mesmo registro continuaria sendo
+o primeiro pendente sempre). A implementação trata qualquer erro que não
+seja `whatsapp_not_connected` como falha do candidato específico (conta em
+`whatsapp_candidate_errors`, registrado como aviso não-fatal em
+`sync_runs.errors`) e segue para o próximo candidato/cliente normalmente.
+
 ## Parâmetros técnicos (settings.js — não são configuração de negócio)
 
 - `settings.uniplus.filialId` — id da filial única desta loja no Uniplus

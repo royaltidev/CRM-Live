@@ -97,6 +97,8 @@ aplicando a mesma convenção de flags já usada em outros filtros.
 - `notafiscal.status` não é filtrado (só `cancelamento`) — valores possíveis não confirmados.
 - Validação de WhatsApp limitada a 200 números por execução (evita sobrecarregar a sessão a cada 15 min); o restante valida nas execuções seguintes.
 
+**Correção adicional (10/08/2026, após revisão da tarefa de validação de WhatsApp):** a primeira versão só tratava `Error('whatsapp_not_connected')` — qualquer outro erro em `checkNumberStatus` (ex.: número malformado, falha pontual do Puppeteer) abortava a validação da execução inteira. Como a consulta de pendentes é `ORDER BY id`, isso criaria um efeito "cabeça de fila travada": o mesmo registro problemático seria sempre o primeiro da fila e travaria a validação de todos os que vêm depois dele, em toda execução futura. Corrigido para tratar erro de candidato individualmente (conta em `whatsapp_candidate_errors`, aviso não-fatal) e seguir para o próximo candidato/cliente. Testado com dois cenários isolados (erro pontual seguido de candidato válido; propagação do erro sentinela `whatsapp_not_connected` continua interrompendo tudo, como esperado) — ambos passaram.
+
 ## Checklist da Fase 6 (concluída em 08/08/2026)
 
 Construída com 2 subagentes em paralelo (Consentimento; Mensageria+Fila),

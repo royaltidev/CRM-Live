@@ -95,7 +95,7 @@ Decisões técnicas tomadas durante a preparação do terreno (07/08/2026), para
 
 **Checklist:**
 - [ ] Job de sincronização periódica (polling parametrizável).
-- [x] Mapeamento de campos do schema real do Uniplus para as tabelas-espelho (`customers`, `sales`, `sale_items`, `products`, `stock_snapshots`) — concluído em 08/08/2026, ver `docs/uniplus-schema/`. Pendência residual: colunas da tabela `item` ainda não confirmadas.
+- [x] Mapeamento de campos do schema real do Uniplus para as tabelas-espelho (`customers`, `sales`, `sale_items`, `products`, `stock_snapshots`) — concluído em 08–10/08/2026, ver `docs/uniplus-schema/`. Inclui as 12 tabelas de origem, com `item` confirmada em 10/08/2026.
 - [ ] Migration: adicionar `sales.source_type` (enum `dav`/`nota_fiscal`) e `sales.uniplus_id` prefixado por origem.
 - [ ] Regra de deduplicação de vendas DAV × Nota Fiscal (`dav.idnotafiscal IS NULL` para sincronizar o DAV).
 - [ ] Nova capacidade na camada de mensageria (`backend/app/integrations/whatsapp/`) para checar se um número tem conta WhatsApp válida (`client.getNumberId`), usada pela sincronização para validar `whatsapp`/`celular`/`telefone` de `entidade`, nessa ordem.

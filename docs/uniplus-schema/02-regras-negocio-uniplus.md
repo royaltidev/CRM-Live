@@ -104,14 +104,17 @@ regra de deduplicação na hora de popular a partir de `dav` + `notafiscal`:
 `notafiscalitem`, `operacao_nfce_view`, `produto`, `produtoean`,
 `saldoestoque`.
 
-**Pendência aberta em 10/08/2026 — tabela `item`:** listada acima como
-necessária, mas suas colunas nunca foram selecionadas em
-`04-colunas-confirmadas.md` (só as de `produto` foram — o levantamento bruto
-de `item`, com 244 colunas, está em `03-colunas-tabelas-selecionadas.md`,
-linha 1389). O responsável confirmou que `item` tem papel próprio (não é
-redundante com `produto`) e vai enviar a lista de colunas confirmadas.
-Nenhuma parte da sincronização que dependa de `item` deve ser implementada
-até essa lista chegar.
+**Resolvido em 10/08/2026 — tabela `item`:** colunas confirmadas em
+`04-colunas-confirmadas.md`. `item` tem papel próprio (não é redundante com
+`produto`) e contém colunas que referenciam tanto `dav` (`numerodav`) quanto
+`notafiscal` (`numeronotafiscal`, `serienotafiscal`, `chaveacesso`) — indício
+de que pode ser uma tabela denormalizada/de relatório que já une os itens de
+venda das duas origens. **Ponto a decidir no desenho do job de sincronização
+(não uma regra de negócio, uma escolha técnica de implementação):** usar
+`item` como fonte única dos itens de venda (substituindo `davitem` +
+`notafiscalitem`), ou usar `davitem`/`notafiscalitem` como fonte primária e
+`item` apenas como apoio/validação cruzada. Avaliar qual das duas tem
+cobertura mais completa (ex.: kits, itens cancelados) antes de decidir.
 
 ## Próximos passos
 

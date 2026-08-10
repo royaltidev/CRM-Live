@@ -36,6 +36,19 @@ da lista curada proposta em cima do levantamento bruto de
 `id`, `iddav`, `idproduto`, `quantidade`, `preco`, `total`, `desconto`,
 `cancelado`
 
+## item
+`id`, `idoperacao`, `produto`, `quantidade`, `precounitario`, `precoliquido`,
+`vendedor`, `cancelado`, `data`, `nomeproduto`, `numerodav`,
+`numeronotafiscal`, `serienotafiscal`, `chaveacesso`, `tipodocumento`
+
+**Observação:** esta tabela tem colunas que apontam tanto para `dav`
+(`numerodav`) quanto para `notafiscal` (`numeronotafiscal`, `serienotafiscal`,
+`chaveacesso`) — pode ser uma tabela denormalizada/de relatório que já
+unifica os itens de venda das duas origens. Vale avaliar, no desenho da
+sincronização da Fase 4, se `item` pode substituir a necessidade de
+sincronizar `davitem` e `notafiscalitem` separadamente, ou se são fontes
+complementares.
+
 ## notafiscal
 `id`, `tipodocumento`, `idfilial`, `identidade`, `idrepresentante`,
 `numeronotafiscal`, `serie`, `modelo`, `chavenfe`, `emissao`,

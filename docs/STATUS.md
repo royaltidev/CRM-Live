@@ -181,13 +181,13 @@ seguidos de integração manual (rotas, menu, dados de demonstração, testes).
 
 ## Próximo passo recomendado
 
-**Fase 4 não está mais bloqueada.** O mapeamento do schema real do banco do Uniplus foi concluído em 08–10/08/2026: 12 tabelas de origem (`dav`, `davitem`, `entidade`, `filial`, `hierarquia`, `item`, `notafiscal`, `notafiscalitem`, `operacao_nfce_view`, `produto`, `produtoean`, `saldoestoque`) e colunas confirmadas para 11 delas (falta `item`, ver pendência abaixo), junto com regras de negócio essenciais para a sincronização (papéis multi-flag de `entidade`, categoria de produto via `hierarquia`, e a regra de deduplicação de vendas DAV × Nota Fiscal via `dav.idnotafiscal`). Ver `docs/uniplus-schema/` (arquivos 01 a 04) para o detalhamento completo.
+**Fase 4 não está mais bloqueada — mapeamento do schema fechado.** O mapeamento do schema real do banco do Uniplus foi concluído em 08–10/08/2026: 12 tabelas de origem (`dav`, `davitem`, `entidade`, `filial`, `hierarquia`, `item`, `notafiscal`, `notafiscalitem`, `operacao_nfce_view`, `produto`, `produtoean`, `saldoestoque`) com colunas confirmadas para todas elas, incluindo `item` (confirmado em 10/08/2026 — tem papel próprio, com colunas que referenciam tanto `dav` quanto `notafiscal`; ver observação em `docs/uniplus-schema/04-colunas-confirmadas.md`), junto com regras de negócio essenciais para a sincronização (papéis multi-flag de `entidade`, categoria de produto via `hierarquia`, e a regra de deduplicação de vendas DAV × Nota Fiscal via `dav.idnotafiscal`). Ver `docs/uniplus-schema/` (arquivos 01 a 04) para o detalhamento completo.
 
 Duas decisões de negócio foram tomadas em 10/08/2026, revisadas com o responsável antes de iniciar a implementação:
 - `sales` ganha a coluna `source_type` (`dav`/`nota_fiscal`) para permitir segmentar relatórios de vendas por origem.
 - A validação de WhatsApp na sincronização passa a ser ativa: a sincronização testa `entidade.whatsapp`, depois `entidade.celular`, depois `entidade.telefone`, checando cada um contra o próprio WhatsApp (nova capacidade a construir na camada de mensageria da Fase 6) e só grava em `customers.phone_e164`/`whatsapp_validated=true` o primeiro que for confirmado como tendo conta ativa.
 
-**Pendência que ainda bloqueia o fechamento total do mapeamento:** as colunas da tabela `item` não foram confirmadas (só as de `produto`). O responsável confirmou que `item` tem papel próprio (não é redundante com `produto`) e vai enviar a lista de colunas. A implementação da Fase 4 em si (job de sincronização, painel de status) ainda não foi iniciada — o plano de arquitetura será apresentado para aprovação antes de começar a codar.
+A implementação da Fase 4 em si (job de sincronização, painel de status) ainda não foi iniciada — o plano de arquitetura será apresentado para aprovação antes de começar a codar.
 
 Entre as fases não iniciadas, a próxima pendente de decisão é a **Fase 7 — Réguas de relacionamento (automações)**:
 - Motor de réguas (gatilho + condição + ação), com bloqueio de ativação sem modelo de mensagem associado

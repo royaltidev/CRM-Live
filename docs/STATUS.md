@@ -28,7 +28,7 @@ Decisões técnicas tomadas nesta etapa (pontos que o `docs/FSD.md` deixava em a
 | 1 | Infraestrutura e base do projeto | ✅ Concluída |
 | 2 | Banco de dados e persistência | ✅ Concluída |
 | 3 | Autenticação, sessão, controle de acesso e gestão de usuários | ✅ Concluída |
-| 4 | Integração com o Uniplus (sincronização) | ⏳ Não iniciada (schema mapeado em 08/08/2026 — ver `docs/uniplus-schema/`) |
+| 4 | Integração com o Uniplus (sincronização) | ✅ Concluída |
 | 5 | Cadastro/visão 360º do cliente + Segmentação | ✅ Concluída |
 | 6 | Consentimento (LGPD) + camada de mensageria | ✅ Concluída |
 | 7 | Réguas de relacionamento (automações) | ⏳ Não iniciada |
@@ -37,6 +37,65 @@ Decisões técnicas tomadas nesta etapa (pontos que o `docs/FSD.md` deixava em a
 | 10 | Gestão de satisfação (NPS) | ⏳ Não iniciada |
 | 11 | Relatórios, dashboards e exportações | ⏳ Não iniciada |
 | Final | Itens transversais, segurança, qualidade, deploy | ⏳ Não iniciada |
+
+## Checklist da Fase 4 (concluída em 10/08/2026)
+
+Construída com 3 subagentes em paralelo (validação de WhatsApp; pipeline de
+sincronização; painel de status), seguidos de integração manual (rotas,
+menu, `main.js`, correções e testes).
+
+**Mapeamento do schema real do Uniplus:** 12 tabelas de origem confirmadas
+(`entidade`, `filial`, `hierarquia`, `produto`, `produtoean`, `saldoestoque`,
+`dav`, `davitem`, `notafiscal`, `notafiscalitem`, `operacao_nfce_view`,
+`item`) — ver `docs/uniplus-schema/01` a `05`. O documento `05-mapeamento-sincronizacao.md`
+é a referência técnica completa (convenção de flags smallint, mapeamento
+tabela a tabela, as três origens de venda, contrato de `checkNumberStatus`).
+
+**Descoberta relevante durante a implementação:** vendas têm **três**
+origens, não duas — `notafiscal`, `dav` (não faturada) e `operacao_nfce_view`
+(PDV/balcão, com itens em `item`, não em `davitem`/`notafiscalitem`).
+`sales.source_type` ganhou o valor `pdv_nfce` além de `dav`/`nota_fiscal`. O
+vínculo de cliente/vendedor em `operacao_nfce_view` é por **código**
+(`entidade.codigo`), não por id — diferente das outras duas origens.
+
+**Correção aplicada após a implementação dos subagentes:** nem `notafiscal`
+nem `dav` filtravam documentos cancelados/não aprovados (risco real de
+inflar o faturamento sincronizado). Adicionado `cancelamento IS NULL` em
+`notafiscal` e `aprovado <> 0 AND datacancelamento IS NULL` em `dav`,
+aplicando a mesma convenção de flags já usada em outros filtros.
+
+**Módulo Sincronização** (FSD 6.9, 13.10, 14.1):
+- [x] `backend/app/integrations/uniplus/uniplus.repository.js` — só `SELECT` no `uniplusPool`; todas as colunas conferidas contra `04-colunas-confirmadas.md` (0 divergências, validado por script).
+- [x] `backend/app/services/sync.service.js` — orquestra customers ← entidade, sellers ← entidade, products ← produto+hierarquia, stock_snapshots ← saldoestoque, sales+sale_items ← as três origens, validação de WhatsApp, agregados de cliente (`first_purchase_at`/`last_purchase_at`/`average_ticket`/`purchase_frequency_days`), `rfm.service.recalculateRfmForAllCustomers()`. Exporta `runSync({triggeredBy})` / `isSyncRunning()`.
+- [x] `backend/app/jobs/uniplus-sync.job.js` — a cada `settings.uniplus.syncIntervalMinutes` (15 min), mesmo padrão de `message-queue.job.js` (sem sobreposição, nunca derruba o processo).
+- [x] `backend/app/services/automation-trigger.service.js` — stub (`notifyNewSales`/`notifyStockReplenished`); motor real de réguas é a Fase 7.
+- [x] Migration `030_add_source_type_to_sales.js` — `sales.source_type` (enum) + índice.
+- [x] `checkNumberStatus(phoneE164)` na camada de mensageria (`whatsapp/index.js` + provider), via `client.getNumberId` — confirmado lendo o código-fonte real da lib, sem suposição.
+- [x] `backend/app/services/sync-status.service.js` + `sync.controller.js` — `GET /sync/runs`, `POST /sync/run` (gatilho manual, 409 se já em andamento, 202 caso contrário).
+- [x] Frontend `StatusSincronizacao.jsx` — última execução em destaque, histórico, botão "Sincronizar agora".
+
+**Integração final:**
+- [x] Rotas registradas em `main.js`: `GET /sync/runs`, `POST /sync/run`.
+- [x] `startUniplusSyncJob()` chamado no callback de `app.listen(...)`.
+- [x] Menu lateral (`AppLayout.jsx`) atualizado com "Sincronização Uniplus".
+- [x] Rota de frontend (`/status-sincronizacao`) registrada em `App.jsx`.
+
+**Testes executados nesta sessão:**
+- [x] `node -c` em todos os `.js` novos/alterados — sem erros.
+- [x] Validação de 114 referências de coluna nas queries do repositório contra `04-colunas-confirmadas.md` — 0 divergências.
+- [x] Validação sintática de todo o SQL (estático + gerado em runtime) com o parser oficial do PostgreSQL (`pglast`) — sem erros.
+- [x] Harness offline (mocks de `crmPool`/`uniplusPool`): `runSync()` testado em 4 cenários (sucesso, reentrância, Uniplus fora do ar, etapa falhando) — resultados corretos (`success`/`partial_error`/`failed`, sem exceção vazando).
+- [x] `node app/main.js` rodando de verdade: servidor sobe, job de sincronização inicia ("a cada 15 minuto(s)"), falha de conexão com `db` (não resolve fora do Docker) é capturada graciosamente — processo não cai.
+- [x] `curl`: `GET /health` → 200; `GET /sync/runs` e `POST /sync/run` sem sessão → 401 (ambos).
+- [x] `npx vite build` — build de produção completo, sem erros.
+- [ ] **Não testado nesta sessão** (exige PostgreSQL real, indisponível no sandbox — ver `docs/ERROS.md`): sincronização de ponta a ponta contra o banco real do Uniplus, migration 030 rodando de fato, RFM recalculado com dados reais.
+
+**Suposições que precisam de validação no ambiente real antes de confiar cegamente:**
+- Convenção de flags smallint (`0`=falso, `<>0`=verdadeiro) para `cliente`, `representante`, `inativo`, `aprovado`, `cancelado` — rodar `SELECT DISTINCT coluna, COUNT(*) ... GROUP BY 1` por tabela antes de operar em produção.
+- `entidade.tipopessoa` (pessoa física/jurídica): valores desconhecidos — o código sempre usa `entidade.nome` (nunca `razaosocial`) até isso ser confirmado.
+- `settings.uniplus.filialId` continua com placeholder `CHANGE_ME_uniplus_filial_id` — a etapa de estoque falha com mensagem clara enquanto não for preenchido com o id real da filial.
+- `notafiscal.status` não é filtrado (só `cancelamento`) — valores possíveis não confirmados.
+- Validação de WhatsApp limitada a 200 números por execução (evita sobrecarregar a sessão a cada 15 min); o restante valida nas execuções seguintes.
 
 ## Checklist da Fase 6 (concluída em 08/08/2026)
 
@@ -177,17 +236,23 @@ seguidos de integração manual (rotas, menu, dados de demonstração, testes).
 
 ## Fase atual
 
-**Fase 6 — Consentimento (LGPD) + Camada de mensageria e fila de envio: concluída em 08/08/2026.**
+**Fase 4 — Integração com o Uniplus (sincronização): concluída em 10/08/2026.**
 
 ## Próximo passo recomendado
 
-**Fase 4 não está mais bloqueada — mapeamento do schema fechado.** O mapeamento do schema real do banco do Uniplus foi concluído em 08–10/08/2026: 12 tabelas de origem (`dav`, `davitem`, `entidade`, `filial`, `hierarquia`, `item`, `notafiscal`, `notafiscalitem`, `operacao_nfce_view`, `produto`, `produtoean`, `saldoestoque`) com colunas confirmadas para todas elas, incluindo `item` (confirmado em 10/08/2026 — tem papel próprio, com colunas que referenciam tanto `dav` quanto `notafiscal`; ver observação em `docs/uniplus-schema/04-colunas-confirmadas.md`), junto com regras de negócio essenciais para a sincronização (papéis multi-flag de `entidade`, categoria de produto via `hierarquia`, e a regra de deduplicação de vendas DAV × Nota Fiscal via `dav.idnotafiscal`). Ver `docs/uniplus-schema/` (arquivos 01 a 04) para o detalhamento completo.
+Entre as fases não iniciadas, a próxima pendente de decisão é a **Fase 7 — Réguas de relacionamento (automações)**:
+- Motor de réguas (gatilho + condição + ação), com bloqueio de ativação sem modelo de mensagem associado
+- Réguas específicas: agradecimento pós-venda, aniversário, lembrete de recompra, NPS, reativação (win-back) em cascata, aviso de volta ao estoque
+- Régua `first_identified_purchase` (adiada da Fase 5 — ver checklist da Fase 5)
+- Tela de clientes elegíveis por etapa do win-back
+- Conectar o hook `automation-trigger.service.js` (stub criado na Fase 4) ao motor real
+- Conectar `processInboundOptOutKeyword` (pronto desde a Fase 6) a um fluxo real de mensagem recebida
 
-Duas decisões de negócio foram tomadas em 10/08/2026, revisadas com o responsável antes de iniciar a implementação:
-- `sales` ganha a coluna `source_type` (`dav`/`nota_fiscal`) para permitir segmentar relatórios de vendas por origem.
-- A validação de WhatsApp na sincronização passa a ser ativa: a sincronização testa `entidade.whatsapp`, depois `entidade.celular`, depois `entidade.telefone`, checando cada um contra o próprio WhatsApp (nova capacidade a construir na camada de mensageria da Fase 6) e só grava em `customers.phone_e164`/`whatsapp_validated=true` o primeiro que for confirmado como tendo conta ativa.
-
-A implementação da Fase 4 em si (job de sincronização, painel de status) ainda não foi iniciada — o plano de arquitetura será apresentado para aprovação antes de começar a codar.
+**Antes de operar a Fase 4 em produção**, é necessário:
+1. Rodar a migration `030_add_source_type_to_sales.js` no banco real (`node app/database/migrate.js`).
+2. Preencher `settings.uniplus.filialId` com o id real da filial no Uniplus (placeholder `CHANGE_ME_uniplus_filial_id` atualmente).
+3. Validar contra dados reais as suposições registradas no checklist da Fase 4 (convenção de flags smallint, `entidade.tipopessoa`).
+4. Ter a sessão do WhatsApp conectada (Fase 6) para que a validação ativa de números funcione — sem sessão, a sincronização continua rodando normalmente, mas todos os telefones ficam `whatsapp_validated=false` até a sessão subir.
 
 Entre as fases não iniciadas, a próxima pendente de decisão é a **Fase 7 — Réguas de relacionamento (automações)**:
 - Motor de réguas (gatilho + condição + ação), com bloqueio de ativação sem modelo de mensagem associado
@@ -241,6 +306,5 @@ Copie o valor para `backend/app/config/settings.js` > `session.secret`
 
 ## Pendências que não bloqueiam a Fase 2, mas precisam ser resolvidas antes das fases indicadas
 
-- **Biblioteca de automação do WhatsApp Web** (`whatsapp-web.js` vs. Baileys) — decisão necessária antes da Fase 6.
 - **Uso das variantes de logomarca** ainda não confirmadas (`logo-oval-branca`, `logo-oval-monocromatica`, `avatar-1024.png`, `preview-branca-fundo-escuro.png`) — confirmar com o responsável antes de aplicá-las a alguma tela (relevante a partir da Fase 3, quando as primeiras telas reais forem construídas).
 - **Estratégia de backup** da base de dados do CRM Live (RNF-07) — a definir antes da entrega em produção (Fase Final).

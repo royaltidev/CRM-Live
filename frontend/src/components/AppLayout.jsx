@@ -24,6 +24,7 @@ import ManageAccountsIcon from '@mui/icons-material/ManageAccountsOutlined';
 import LogoutIcon from '@mui/icons-material/LogoutOutlined';
 import GppGoodIcon from '@mui/icons-material/GppGoodOutlined';
 import ForumIcon from '@mui/icons-material/ForumOutlined';
+import SyncOutlinedIcon from '@mui/icons-material/SyncOutlined';
 import { useAuth } from '../contexts/AuthContext';
 
 const DRAWER_WIDTH = 260;
@@ -38,6 +39,7 @@ const MENU_ITEMS = [
   { label: 'Tags', path: '/tags', icon: LocalOfferIcon },
   { label: 'Consentimento (LGPD)', path: '/consentimento', icon: GppGoodIcon },
   { label: 'Log de Disparos', path: '/log-disparos', icon: ForumIcon },
+  { label: 'Sincronização Uniplus', path: '/status-sincronizacao', icon: SyncOutlinedIcon },
   { label: 'Gestão de Usuários', path: '/users', icon: ManageAccountsIcon, adminOnly: true },
 ];
 

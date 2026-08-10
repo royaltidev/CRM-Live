@@ -148,15 +148,22 @@ async function seed() {
 
   // --- Vendas (algumas vinculadas a clientes, algumas sem cliente — para o
   // relatório "vendas sem cliente identificado") ---
+  // Origens de venda possíveis (enum sale_source_type, migration 030 — espelha
+  // as três origens do Uniplus: nota fiscal, DAV não faturada e PDV/NFC-e).
+  // As vendas de demonstração alternam entre elas para que as telas que
+  // segmentam por origem tenham dado de exemplo em todas as faixas.
+  const DEMO_SOURCE_TYPES = ['nota_fiscal', 'dav', 'pdv_nfce'];
+
   let saleCounter = 1;
   const makeSale = async (customerId, sellerId, saleDate, totalAmount) => {
     const uniplusId = `DEMO-SALE-${String(saleCounter).padStart(4, '0')}`;
+    const sourceType = DEMO_SOURCE_TYPES[(saleCounter - 1) % DEMO_SOURCE_TYPES.length];
     saleCounter += 1;
     const result = await crmPool.query(
-      `INSERT INTO sales (uniplus_id, customer_id, seller_id, sale_date, total_amount, synced_at, created_at)
-       VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
+      `INSERT INTO sales (uniplus_id, customer_id, seller_id, sale_date, total_amount, source_type, synced_at, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
        RETURNING id`,
-      [uniplusId, customerId, sellerId, saleDate, totalAmount]
+      [uniplusId, customerId, sellerId, saleDate, totalAmount, sourceType]
     );
     return result.rows[0].id;
   };

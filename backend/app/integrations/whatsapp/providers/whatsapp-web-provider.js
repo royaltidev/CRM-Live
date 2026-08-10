@@ -157,6 +157,26 @@ function formatChatId(phoneE164) {
   return `${digitsOnly}@c.us`;
 }
 
+// Verifica se um número (E.164) possui conta WhatsApp ativa, usando
+// `client.getNumberId`. Confirmado lendo `node_modules/whatsapp-web.js/src/Client.js`
+// (método `getNumberId`): a lib aceita tanto o número puro quanto já com o
+// sufixo "@c.us" (adiciona automaticamente se ausente), então reaproveitamos
+// `formatChatId` normalmente. Retorna `null` internamente na lib quando o
+// número não tem conta WhatsApp.
+async function checkNumberStatus(phoneE164) {
+  if (!client || !initialized) {
+    throw new Error('whatsapp_not_connected');
+  }
+
+  const chatId = formatChatId(phoneE164);
+  const result = await client.getNumberId(chatId);
+
+  return {
+    hasWhatsapp: !!result,
+    waId: result ? result._serialized : null,
+  };
+}
+
 // Retorna o estado de conexão atual, de forma síncrona.
 function getConnectionStatus() {
   return {
@@ -179,4 +199,5 @@ module.exports = {
   sendImage,
   getConnectionStatus,
   onSessionDown,
+  checkNumberStatus,
 };

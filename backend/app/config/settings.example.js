@@ -69,4 +69,17 @@ module.exports = {
     provider: 'whatsapp_web', // valor futuro possível: 'cloud_api' (API oficial)
     sessionStoragePath: './app/storage/whatsapp-session',
   },
+
+  // Parâmetros TÉCNICOS da sincronização com o Uniplus (Fase 4) — não são
+  // configuração de negócio (essas ficam em system_settings, ver FSD seção 20).
+  // Ver docs/uniplus-schema/05-mapeamento-sincronizacao.md, § "Parâmetros técnicos".
+  uniplus: {
+    // Id da filial única desta loja no Uniplus (usado em saldoestoque.idfilial).
+    // Precisa ser o id NUMÉRICO real da filial, confirmado no ambiente de
+    // produção — a sincronização de estoque falha com mensagem explícita
+    // enquanto este valor não for preenchido.
+    filialId: 'CHANGE_ME_uniplus_filial_id',
+    // Intervalo entre execuções automáticas do job de sincronização.
+    syncIntervalMinutes: 15,
+  },
 };

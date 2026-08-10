@@ -16,6 +16,10 @@
 //   - async function sendImage({ to, imageUrl, caption })
 //   - function getConnectionStatus() -> { connected: boolean, lastEventAt: Date|null }
 //   - function onSessionDown(callback)
+//   - async function checkNumberStatus(phoneE164) -> { hasWhatsapp: boolean, waId: string|null }
+//     (usada pela sincronização com o Uniplus — Fase 4 — para validar
+//     candidatos a telefone antes de gravar em customers.phone_e164; ver
+//     docs/uniplus-schema/02-regras-negocio-uniplus.md, seção 2)
 
 const settings = require('../../config/settings');
 
@@ -48,4 +52,5 @@ module.exports = {
   sendImage: provider.sendImage,
   getConnectionStatus: provider.getConnectionStatus,
   onSessionDown: provider.onSessionDown,
+  checkNumberStatus: provider.checkNumberStatus,
 };

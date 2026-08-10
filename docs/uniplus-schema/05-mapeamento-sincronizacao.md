@@ -95,8 +95,10 @@ três tabelas de origem (todas usam sequências próprias começando em 1):
 - `pdv_nfce` → `nfce-<operacao_nfce_view.id>`
 
 ### 1. `source_type = 'nota_fiscal'` ← notafiscal
-- Sincronizar **todas** as linhas de `notafiscal` (sem filtro de dedup — é a
-  origem "âncora").
+- Sincronizar as linhas de `notafiscal` (sem filtro de dedup contra `dav` — é
+  a origem "âncora"), **exceto notas canceladas** (`cancelamento IS NOT
+  NULL` — decisão de 10/08/2026: nota cancelada não é venda real). A coluna
+  `status` não teve seus valores confirmados e não é filtrada.
 - `sale_date` = `notafiscal.datahoraemissao`
 - `total_amount` = `notafiscal.valortotalnota`
 - `customer_id` resolvido via `notafiscal.identidade → entidade.id →
@@ -108,9 +110,14 @@ três tabelas de origem (todas usam sequências próprias começando em 1):
 ### 2. `source_type = 'dav'` ← dav
 ```sql
 WHERE dav.idnotafiscal IS NULL
+  AND dav.aprovado <> 0
+  AND dav.datacancelamento IS NULL
 ```
-(evita duplicar venda já contada via `notafiscal` — ver
-`02-regras-negocio-uniplus.md`, regra 4)
+- `idnotafiscal IS NULL` evita duplicar venda já contada via `notafiscal`
+  (ver `02-regras-negocio-uniplus.md`, regra 4).
+- `aprovado <> 0` e `datacancelamento IS NULL` — decisão de 10/08/2026,
+  aplicando a mesma convenção de flags smallint já definida: DAV não
+  aprovada (orçamento/rascunho) ou cancelada não é venda concluída.
 - `sale_date` = `dav.data` (ou `dav.datainclusao` se `data` vier nula)
 - `total_amount` = `dav.valor`
 - `customer_id` via `dav.idcliente → entidade.id → customers.uniplus_id`
@@ -133,7 +140,18 @@ WHERE dav.idnotafiscal IS NULL
   prevê cadastro automático de cliente a partir disso; a venda entra no
   relatório de "vendas sem cliente identificado", FSD §12.16, já
   especificado mas ainda não planejado para nenhuma fase — avaliar depois).
-- Itens: `item WHERE idoperacao = operacao_nfce_view.id`
+- Itens: `item WHERE idoperacao = operacao_nfce_view.id`. **Descoberta na
+  implementação (10/08/2026):** `item.produto` é `character varying(20)` —
+  é o CÓDIGO do produto (`produto.codigo`), não `produto.id`. A resolução
+  para `products.uniplus_id` (que guarda `produto.id`) é feita com
+  `LEFT JOIN produto p ON p.codigo = i.produto` na própria consulta de
+  itens — diferente de `notafiscalitem`/`davitem`, que já trazem
+  `idproduto` como `bigint` direto.
+
+## Status de implementação
+
+Implementado em 10/08/2026 (backend completo + painel de status). Ver
+`docs/PLANO.md`, Fase 4, para o checklist atualizado.
 
 ## Validação de WhatsApp (regra de negócio, ver `02-regras-negocio-uniplus.md` §2)
 

@@ -94,24 +94,24 @@ Decisões técnicas tomadas durante a preparação do terreno (07/08/2026), para
 **Objetivo:** sincronizar clientes, vendas, produtos e estoque do Uniplus para as tabelas-espelho do CRM Live, somente leitura, com painel de status.
 
 **Checklist:**
-- [ ] Job de sincronização periódica (polling parametrizável).
-- [x] Mapeamento de campos do schema real do Uniplus para as tabelas-espelho (`customers`, `sales`, `sale_items`, `products`, `stock_snapshots`) — concluído em 08–10/08/2026, ver `docs/uniplus-schema/`. Inclui as 12 tabelas de origem, com `item` confirmada em 10/08/2026.
-- [ ] Migration: adicionar `sales.source_type` (enum `dav`/`nota_fiscal`) e `sales.uniplus_id` prefixado por origem.
-- [ ] Regra de deduplicação de vendas DAV × Nota Fiscal (`dav.idnotafiscal IS NULL` para sincronizar o DAV).
-- [ ] Nova capacidade na camada de mensageria (`backend/app/integrations/whatsapp/`) para checar se um número tem conta WhatsApp válida (`client.getNumberId`), usada pela sincronização para validar `whatsapp`/`celular`/`telefone` de `entidade`, nessa ordem.
-- [ ] Registro de execução em `sync_runs` (registros importados por entidade, erros).
-- [ ] Recalculo de RFM e atualização de segmentos dinâmicos após cada sincronização.
-- [ ] Disparo de automações relacionadas a novas vendas e mudanças de estoque.
-- [ ] Painel de status de sincronização (frontend, tela 12.14).
+- [x] Job de sincronização periódica — `backend/app/jobs/uniplus-sync.job.js`, a cada `settings.uniplus.syncIntervalMinutes` (15 min por padrão), sem sobreposição de execuções, nunca derruba o processo.
+- [x] Mapeamento de campos do schema real do Uniplus para as tabelas-espelho (`customers`, `sales`, `sale_items`, `products`, `stock_snapshots`) — concluído em 08–10/08/2026, ver `docs/uniplus-schema/`. Inclui as 12 tabelas de origem e o mapeamento técnico completo em `05-mapeamento-sincronizacao.md`.
+- [x] Migration `030_add_source_type_to_sales.js`: `sales.source_type` (enum `dav`/`nota_fiscal`/`pdv_nfce` — terceira origem, PDV/balcão via `operacao_nfce_view`, descoberta em 10/08/2026) e `sales.uniplus_id` prefixado por origem (`nf-`/`dav-`/`nfce-`).
+- [x] Regra de deduplicação de vendas DAV × Nota Fiscal (`dav.idnotafiscal IS NULL`), mais exclusão de DAV não aprovada/cancelada e de nota fiscal cancelada (decisão de 10/08/2026, mesma convenção de flags).
+- [x] Nova capacidade na camada de mensageria (`checkNumberStatus`, via `client.getNumberId`), usada pela sincronização para validar `whatsapp`/`celular`/`telefone` de `entidade`, nessa ordem.
+- [x] Registro de execução em `sync_runs` (registros importados por entidade, erros com severidade `error`/`warning`).
+- [x] Recálculo de RFM após cada sincronização (reaproveita `rfm.service.js`). Segmentos dinâmicos não precisam de "atualização" — são avaliados em tempo real a cada consulta, não materializados.
+- [x] Hook de disparo de automações criado (`automation-trigger.service.js`, stub) — o motor real de réguas é a Fase 7, ainda não construído; o ponto de integração já existe.
+- [x] Painel de status de sincronização (frontend, tela 12.14) — inclui botão "Sincronizar agora" (gatilho manual, decisão de 10/08/2026, além do que a FSD pedia).
 
 **Critérios de pronto:**
-- Sincronização roda sem escrever em nenhuma tabela do banco do Uniplus.
-- Painel de status exibe última execução, registros importados e erros.
-- Nova venda sincronizada aciona a régua de agradecimento (validado já na Fase 7, mas o gatilho precisa existir aqui).
+- [x] Sincronização roda sem escrever em nenhuma tabela do banco do Uniplus (`uniplus.repository.js` só executa `SELECT`).
+- [x] Painel de status exibe última execução, registros importados e erros.
+- [ ] Nova venda sincronizada aciona a régua de agradecimento — depende do motor de réguas da Fase 7 (hook já existe, disparo real fica para lá).
 
-**Arquivos/pastas prováveis:** `backend/app/jobs/sync*`, `backend/app/integrations/uniplus/`, `frontend/src/views/StatusSincronizacao`.
+**Arquivos:** `backend/app/jobs/uniplus-sync.job.js`, `backend/app/integrations/uniplus/uniplus.repository.js`, `backend/app/services/sync.service.js`, `backend/app/services/sync-status.service.js`, `backend/app/services/automation-trigger.service.js`, `backend/app/controllers/sync.controller.js`, `frontend/src/views/StatusSincronizacao/`.
 
-**Observações de dependência:** não bloqueada mais. O mapeamento do schema real do Uniplus foi concluído em 08/08/2026 (12 tabelas, ~103 colunas confirmadas, regras de deduplicação DAV × Nota Fiscal e demais decisões de negócio documentadas em `docs/uniplus-schema/01` a `04`). A implementação desta fase (job de sincronização, tradução das colunas de origem para as tabelas-espelho, painel de status) ainda não foi iniciada.
+**Status:** implementada e testada em 10/08/2026 (ver `docs/STATUS.md` para o detalhamento de testes e pendências de validação em ambiente real).
 
 ---
 

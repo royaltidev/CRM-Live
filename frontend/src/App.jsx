@@ -16,6 +16,7 @@ import Segmentacao from './views/Segmentacao/Segmentacao';
 import Vendedores from './views/Vendedores/Vendedores';
 import Consentimento from './views/Consentimento/Consentimento';
 import LogDisparos from './views/LogDisparos/LogDisparos';
+import StatusSincronizacao from './views/StatusSincronizacao/StatusSincronizacao';
 
 // Componente que protege rotas autenticadas.
 function ProtectedRoute({ children }) {
@@ -86,6 +87,8 @@ function AppContent() {
         <Route path="/consentimento" element={<Consentimento />} />
 
         <Route path="/log-disparos" element={<LogDisparos />} />
+
+        <Route path="/status-sincronizacao" element={<StatusSincronizacao />} />
 
         {/* Exclusiva do Administrador (FSD seção 8.5 e 12.17) */}
         <Route

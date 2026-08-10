@@ -18,9 +18,11 @@ const segmentsController = require('./controllers/segments.controller');
 const sellersController = require('./controllers/sellers.controller');
 const consentController = require('./controllers/consent.controller');
 const messagesController = require('./controllers/messages.controller');
+const syncController = require('./controllers/sync.controller');
 const { requireAuth, requireAdmin } = require('./middleware/auth.middleware');
 const whatsapp = require('./integrations/whatsapp');
 const { startMessageQueueJob } = require('./jobs/message-queue.job');
+const { startUniplusSyncJob } = require('./jobs/uniplus-sync.job');
 
 const app = express();
 
@@ -104,6 +106,11 @@ app.get('/consent/report', requireAuth, consentController.getConsentReportHandle
 
 app.get('/messages', requireAuth, messagesController.listMessages);
 
+// ===== Rotas de Sincronização com o Uniplus (Fase 4) =====
+
+app.get('/sync/runs', requireAuth, syncController.listSyncRunsHandler);
+app.post('/sync/run', requireAuth, syncController.triggerManualSyncHandler);
+
 // ===== Tratamento de Erros Genérico =====
 
 app.use((err, req, res, next) => {
@@ -132,4 +139,10 @@ app.listen(settings.port, () => {
   // (a cada 60s). Fica "pausado" (sem processar nada) até o Administrador
   // configurar a cadência de disparo em system_settings (chave message_cadence).
   startMessageQueueJob();
+
+  // Inicia a sincronização periódica com o Uniplus (a cada
+  // settings.uniplus.syncIntervalMinutes). Não bloqueia o boot do servidor
+  // nem derruba o processo em caso de falha — ver
+  // backend/app/jobs/uniplus-sync.job.js e backend/app/services/sync.service.js.
+  startUniplusSyncJob();
 });

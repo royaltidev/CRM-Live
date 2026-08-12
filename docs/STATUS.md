@@ -1,7 +1,84 @@
 # Status do Projeto — CRM Live
 
-**Última atualização:** 07/08/2026
-**Atualizado por:** preparação inicial do terreno (Fase 1) + configuração de Git/GitHub
+**Última atualização:** 12/08/2026
+**Atualizado por:** validação da Fase 7 em ambiente real (Docker local do responsável, Mac Apple Silicon)
+
+## Validação da Fase 7 em ambiente real (12/08/2026)
+
+Primeira vez que o sistema rodou de ponta a ponta em ambiente real (Docker
+Compose local, não mais sandbox de desenvolvimento com mocks). Resultado:
+**réguas de relacionamento validadas com envio real de WhatsApp confirmado
+pelo responsável** (régua de reativação/win-back, reenvio manual, 2
+clientes de teste, mensagens recebidas de fato nos celulares).
+
+**Bugs reais encontrados e corrigidos durante esta validação** (nenhum
+detectável só com mocks — só apareceram rodando contra Docker/WhatsApp/
+Postgres de verdade):
+
+1. **Login com Google não aparecia** (`frontend/src/views/Login.jsx`) — race
+   condition: o código tentava inicializar/renderizar o botão do Google
+   Sign-In antes do script assíncrono terminar de carregar; como o efeito só
+   rodava uma vez (array de dependências vazio), o botão nunca aparecia se
+   o script ainda não estivesse pronto. Corrigido: o carregamento do script
+   agora expõe um estado (`isLoaded`), e o efeito de inicialização depende
+   dele.
+2. **Proxy do Vite incompleto e com alvo errado** (`frontend/vite.config.js`,
+   `docker-compose.yml`) — só existiam entradas de proxy para `/auth` e
+   `/users` (Fase 3); nenhuma rota das Fases 4–7 (`/customers`, `/tags`,
+   `/sellers`, `/segments`, `/consent`, `/messages`, `/sync`,
+   `/automation-rules`, `/winback`) tinha sido adicionada, e o alvo do proxy
+   estava fixo em `http://localhost:3000` (que dentro do container do
+   frontend aponta pro próprio container, não pro backend). Sem essa
+   correção, praticamente nenhuma tela pós-login funcionaria dentro do
+   Docker. Corrigido: todos os prefixos adicionados, alvo configurável via
+   `VITE_BACKEND_URL` (setado para `http://backend:3000` no
+   `docker-compose.yml`; fora do Docker continua usando `localhost:3000`
+   por padrão).
+3. **Chromium do Puppeteer incompatível com Alpine + ARM** (`backend/Dockerfile`)
+   — o Puppeteer baixa um binário Chromium x86_64 que não roda em containers
+   Alpine (musl) em hosts ARM (Macs Apple Silicon); a tentativa de tradução
+   via Rosetta falhava (`rosetta error: failed to open elf`). Corrigido:
+   `Dockerfile` agora instala o Chromium nativo do Alpine via `apk` e aponta
+   o Puppeteer pra ele (`PUPPETEER_SKIP_DOWNLOAD` +
+   `PUPPETEER_EXECUTABLE_PATH`) — deve funcionar igual em produção (x86_64),
+   já que o pacote é resolvido pra arquitetura de cada build, e também evita
+   depender de `storage.googleapis.com` (rede restrita já causou falha aqui
+   antes, ver `docs/ERROS.md`).
+4. **Envio de mensagem via WhatsApp falhando com "No LID for user"**
+   (`backend/app/integrations/whatsapp/providers/whatsapp-web-provider.js`)
+   — `sendText`/`sendImage` montavam o id do chat só concatenando dígitos
+   (`<numero>@c.us`) e mandavam direto pro `client.sendMessage`, sem
+   resolver o número de verdade primeiro. Isso falha pra números que a
+   sessão do WhatsApp ainda não conhece (sem contato/chat prévio) — o
+   WhatsApp exige a resolução via `client.getNumberId()` antes (sistema
+   "LID"), mesmo mecanismo que `checkNumberStatus` já usava corretamente
+   desde a Fase 4, mas que nunca tinha sido aplicado ao envio de mensagem
+   em si. Corrigido: nova função `resolveChatId()` compartilhada, usada por
+   `sendText` e `sendImage`.
+
+**Configuração de ambiente que também precisou ser feita nesta sessão**
+(não são bugs, são pendências de setup que só apareceriam ao testar de
+verdade):
+- Credenciais reais do Google OAuth 2.0 geradas e configuradas
+  (`backend/app/config/settings.js` + `frontend/.env`, ambos fora do Git).
+- `system_settings.message_cadence` configurado manualmente via SQL
+  (`{"intervalSeconds": 12, "dailyLimit": 50}`, valor de teste — o FSD não
+  define um padrão, e o campo `dailyLimit` atual **não implementa um teto
+  diário de verdade** (só limita o lote processado por execução do job,
+  capado em 50 por segurança); isso e um "intervalo variado" pedido pelo
+  responsável ficam registrados como pendência de melhoria pra Fase 8/Final,
+  quando a tela de Configurações for construída.
+- `system_settings.welcome_coupon_discount_percent` configurado via SQL
+  (`{"percent": 10}`, valor real informado pelo responsável).
+- Consentimento (LGPD) de 2 clientes de teste registrado manualmente via SQL
+  (`opted_in_source: 'manual_test'`) — não existe nenhuma tela/rota ainda
+  para registrar opt-in (só existe o serviço, sem consumidor; captura real
+  de consentimento é prevista pra Fase 9).
+
+**Pendência de ambiente ainda em aberto:** conexão com o banco do Uniplus
+continua não configurada (`settings.js` com placeholders) — sincronização
+real e réguas orientadas a evento (`sale_created`) ainda não puderam ser
+testadas de ponta a ponta.
 
 ## Estado atual
 

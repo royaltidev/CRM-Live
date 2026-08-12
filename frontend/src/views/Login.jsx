@@ -11,13 +11,18 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 
-// Carrega o script da biblioteca Google Sign-In.
+// Carrega o script da biblioteca Google Sign-In e informa quando terminar
+// de carregar (script async — sem isso, initialize()/renderButton() podem
+// rodar antes de window.google existir e o botão nunca aparece).
 function useGoogleSignIn() {
+  const [isLoaded, setIsLoaded] = useState(false);
+
   useEffect(() => {
     const script = document.createElement('script');
     script.src = 'https://accounts.google.com/gsi/client';
     script.async = true;
     script.defer = true;
+    script.onload = () => setIsLoaded(true);
     document.body.appendChild(script);
 
     return () => {
@@ -26,6 +31,8 @@ function useGoogleSignIn() {
       }
     };
   }, []);
+
+  return isLoaded;
 }
 
 export default function Login() {
@@ -34,7 +41,7 @@ export default function Login() {
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [loginError, setLoginError] = useState(null);
 
-  useGoogleSignIn();
+  const isGoogleScriptLoaded = useGoogleSignIn();
 
   // Se já está autenticado, redireciona para o dashboard.
   useEffect(() => {
@@ -65,8 +72,9 @@ export default function Login() {
   };
 
   // Redireciona o Google Sign-In para nosso callback customizado.
+  // Só roda depois que o script assíncrono terminou de carregar.
   useEffect(() => {
-    if (window.google?.accounts?.id) {
+    if (isGoogleScriptLoaded && window.google?.accounts?.id) {
       window.google.accounts.id.initialize({
         client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID,
         callback: handleGoogleSuccess,
@@ -79,7 +87,7 @@ export default function Login() {
         { theme: 'outline', size: 'large', width: '300' }
       );
     }
-  }, []);
+  }, [isGoogleScriptLoaded]);
 
   if (loading) {
     return (

@@ -5,6 +5,12 @@ node_modules/
 # Apenas backend/app/config/settings.example.js é versionado.
 backend/app/config/settings.js
 
+# Variáveis de ambiente do frontend (contém o Client ID do Google OAuth) — nunca versionar.
+frontend/.env
+
+# Arquivo de credenciais OAuth baixado do Google Cloud Console — nunca versionar.
+client_secret_*.json
+
 # Conteúdo de armazenamento local (mantém a pasta, ignora o conteúdo)
 backend/app/storage/attachments/*
 !backend/app/storage/attachments/.gitkeep
@@ -13,6 +19,9 @@ backend/app/storage/logs/*
 
 # Sessão local do WhatsApp Web (Fase 6 em diante)
 backend/app/storage/whatsapp-session/
+
+# Cache de runtime do whatsapp-web.js (versão do WhatsApp Web baixada em disco)
+backend/.wwebjs_cache/
 
 # Build do frontend
 frontend/dist/

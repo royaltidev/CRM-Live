@@ -125,7 +125,7 @@ async function sendText({ to, body }) {
     throw new Error('Cliente do WhatsApp Web não está inicializado.');
   }
 
-  const chatId = formatChatId(to);
+  const chatId = await resolveChatId(to);
   const result = await client.sendMessage(chatId, body);
 
   return {
@@ -141,7 +141,7 @@ async function sendImage({ to, imageUrl, caption }) {
   }
 
   const { MessageMedia } = require('whatsapp-web.js');
-  const chatId = formatChatId(to);
+  const chatId = await resolveChatId(to);
   const media = await MessageMedia.fromUrl(imageUrl);
   const result = await client.sendMessage(chatId, media, { caption });
 
@@ -155,6 +155,22 @@ function formatChatId(phoneE164) {
   // esperado pelo formato "<numero>@c.us" da biblioteca.
   const digitsOnly = String(phoneE164).replace(/\D/g, '');
   return `${digitsOnly}@c.us`;
+}
+
+// Resolve o id real do WhatsApp (WID/LID) para o número antes de enviar.
+// NECESSÁRIO: montar "<numero>@c.us" na mão (formatChatId) e mandar direto
+// pro sendMessage falha com "No LID for user" em números que a sessão ainda
+// não conhece (sem chat/contato prévio) — o WhatsApp exige a resolução via
+// getNumberId primeiro, mesmo mecanismo já usado em checkNumberStatus.
+async function resolveChatId(phoneE164) {
+  const chatId = formatChatId(phoneE164);
+  const result = await client.getNumberId(chatId);
+
+  if (!result) {
+    throw new Error(`Número ${phoneE164} não possui WhatsApp ativo.`);
+  }
+
+  return result._serialized;
 }
 
 // Verifica se um número (E.164) possui conta WhatsApp ativa, usando

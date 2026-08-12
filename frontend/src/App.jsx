@@ -21,6 +21,7 @@ import Reguas from './views/Reguas/Reguas';
 import ReguasWinbackElegiveis from './views/Reguas/ReguasWinbackElegiveis';
 import Templates from './views/Templates/Templates';
 import Cupons from './views/Cupons/Cupons';
+import Giftback from './views/Giftback/Giftback';
 
 // Componente que protege rotas autenticadas.
 function ProtectedRoute({ children }) {
@@ -92,6 +93,8 @@ function AppContent() {
         <Route path="/templates" element={<Templates />} />
 
         <Route path="/cupons" element={<Cupons />} />
+
+        <Route path="/giftback" element={<Giftback />} />
 
         <Route path="/vendedores" element={<Vendedores />} />
 

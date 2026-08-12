@@ -23,6 +23,7 @@ const apiPrefixes = [
   '/winback',
   '/templates',
   '/coupons',
+  '/giftbacks',
 ];
 
 // Alguns prefixos de API colidem com uma rota de tela do React Router com o

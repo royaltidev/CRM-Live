@@ -108,7 +108,45 @@ responsável entre cada uma: (1) Templates, (2) Cupons, (3) Giftback,
 - [ ] **Revisão externa (Codex CLI) pendente** — mesma cota esgotada da
   Parte 1 (retomar retroativamente para as Partes 1 e 2 quando voltar).
 
-**Próxima parte da Fase 8:** Parte 3 — CRUD de Giftback/Cashback.
+## Fase 8 — Parte 3: CRUD de Giftback/Cashback — 12/08/2026
+
+**Backend:**
+- [x] `giftback.service.js` — CRUD sobre `giftback_credits` (migration 019,
+  sem migration nova — as FKs necessárias já vieram na 033): crédito
+  concedido a um cliente específico, com percentual OU valor fixo
+  (exatamente um dos dois — validação explícita), validade opcional;
+  status EFETIVO calculado na leitura (available com `valid_until` no
+  passado vira `expired` — mesmo padrão dos cupons, FSD 14.5); edição e
+  exclusão bloqueadas para crédito já utilizado (FSD seção 10); exclusão
+  de crédito associado a campanha bloqueada pela FK RESTRICT (033);
+  cliente do crédito não é editável (cria-se outro crédito). Resgate
+  (marcar como usado) é a atribuição por período da Parte 5.
+- [x] `giftback.controller.js` + rotas `/giftbacks*` em `main.js` —
+  leitura para todos, escrita exclusiva do Admin.
+
+**Frontend:**
+- [x] `Giftback.jsx` — listagem (cliente, crédito, validade, status),
+  filtros por status e nome de cliente, criar/editar/excluir (Admin);
+  seletor de cliente por Autocomplete com busca server-side
+  (`GET /customers?search=`, mín. 2 letras), primeiro uso desse padrão.
+- [x] Rota `/giftback` + item "Giftback / Cashback" no menu + prefixo
+  `/giftbacks` no proxy do Vite.
+
+**Testes executados:**
+- [x] `node -c` em tudo; `vite build` completo; smoke tests 401.
+- [x] 9 cenários de negócio no service contra o Postgres real: criação
+  percentual, bloqueio de percentual+valor juntos, bloqueio de nenhum dos
+  dois, percentual >100, cliente inexistente, status efetivo `expired` +
+  filtro, edição trocando percentual por valor, bloqueio de edição/exclusão
+  de usado, filtro por nome.
+- [x] Teste E2E pela interface (sessão Admin real): criação de crédito
+  usando o Autocomplete de cliente (busca server-side disparando e
+  populando o dropdown) → aparece na listagem como Disponível.
+- [ ] **Revisão externa (Codex CLI) pendente** — mesma cota esgotada
+  (retroativa para as Partes 1, 2 e 3 quando voltar).
+
+**Próxima parte da Fase 8:** Parte 4 — Cross-sell (produtos complementares
++ régua automática pós-compra).
 
 ## Validação da Fase 7 em ambiente real (12/08/2026)
 

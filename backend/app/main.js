@@ -23,6 +23,7 @@ const automationRulesController = require('./controllers/automation-rules.contro
 const winbackController = require('./controllers/winback.controller');
 const templatesController = require('./controllers/templates.controller');
 const couponsController = require('./controllers/coupons.controller');
+const giftbackController = require('./controllers/giftback.controller');
 const { requireAuth, requireAdmin } = require('./middleware/auth.middleware');
 const whatsapp = require('./integrations/whatsapp');
 const { startMessageQueueJob } = require('./jobs/message-queue.job');
@@ -160,6 +161,15 @@ app.post('/coupons', requireAuth, requireAdmin, couponsController.createCoupon);
 app.get('/coupons/:id', requireAuth, couponsController.getCouponById);
 app.patch('/coupons/:id', requireAuth, requireAdmin, couponsController.updateCoupon);
 app.delete('/coupons/:id', requireAuth, requireAdmin, couponsController.deleteCoupon);
+
+// ===== Rotas de Giftback/Cashback (Fase 8) =====
+
+// Leitura: Admin e Acesso Limitado (FSD 8.5). Escrita: exclusiva do Admin.
+app.get('/giftbacks', requireAuth, giftbackController.listGiftbacks);
+app.post('/giftbacks', requireAuth, requireAdmin, giftbackController.createGiftback);
+app.get('/giftbacks/:id', requireAuth, giftbackController.getGiftbackById);
+app.patch('/giftbacks/:id', requireAuth, requireAdmin, giftbackController.updateGiftback);
+app.delete('/giftbacks/:id', requireAuth, requireAdmin, giftbackController.deleteGiftback);
 
 // ===== Tratamento de Erros Genérico =====
 

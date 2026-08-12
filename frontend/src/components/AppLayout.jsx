@@ -27,6 +27,7 @@ import ForumIcon from '@mui/icons-material/ForumOutlined';
 import SyncOutlinedIcon from '@mui/icons-material/SyncOutlined';
 import CampaignOutlinedIcon from '@mui/icons-material/CampaignOutlined';
 import ArticleOutlinedIcon from '@mui/icons-material/ArticleOutlined';
+import ConfirmationNumberOutlinedIcon from '@mui/icons-material/ConfirmationNumberOutlined';
 import { useAuth } from '../contexts/AuthContext';
 
 const DRAWER_WIDTH = 260;
@@ -43,6 +44,7 @@ const MENU_ITEMS = [
   { label: 'Log de Disparos', path: '/log-disparos', icon: ForumIcon },
   { label: 'Réguas de Relacionamento', path: '/reguas', icon: CampaignOutlinedIcon },
   { label: 'Modelos de Mensagem', path: '/templates', icon: ArticleOutlinedIcon },
+  { label: 'Cupons', path: '/cupons', icon: ConfirmationNumberOutlinedIcon },
   { label: 'Sincronização Uniplus', path: '/status-sincronizacao', icon: SyncOutlinedIcon },
   { label: 'Gestão de Usuários', path: '/users', icon: ManageAccountsIcon, adminOnly: true },
 ];

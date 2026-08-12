@@ -69,7 +69,46 @@ responsável entre cada uma: (1) Templates, (2) Cupons, (3) Giftback,
   rodar — cota de uso do Codex esgotada até ~10/09/2026. Retomar a revisão
   retroativa quando a cota voltar, antes de dar a Parte 1 por 100% fechada.
 
-**Próxima parte da Fase 8:** Parte 2 — CRUD de Cupons.
+## Fase 8 — Parte 2: CRUD de Cupons — 12/08/2026
+
+**Backend:**
+- [x] Migration `033_add_missing_campaign_foreign_keys.js` — FKs previstas
+  no FSD mas nunca criadas na migration 016: `campaigns.coupon_id` →
+  `coupons` e `campaigns.giftback_rule_id` → `giftback_credits`, ambas
+  RESTRICT (cupom/giftback associado a campanha não pode ser excluído).
+  Executada com sucesso no banco local.
+- [x] `coupons.service.js` — CRUD com: código único (salvo em maiúsculas,
+  erro amigável em duplicidade — FSD 12.8/14.5); status EFETIVO calculado
+  na leitura (cupom `active` com `valid_until` no passado é tratado como
+  `expired` em listagem e filtros, sem job de virada de status — FSD 14.5);
+  validações (percentual ≤ 100, valor > 0, validade final ≥ inicial);
+  edição e exclusão bloqueadas para cupom já utilizado (registro histórico,
+  FSD seção 10); exclusão de cupom em campanha bloqueada pela FK.
+  Marcação de uso (resgate) NÃO faz parte deste CRUD — é a atribuição por
+  período da Parte 5 (campanhas), FSD 14.5.
+- [x] `coupons.controller.js` + rotas em `main.js` — leitura para todos,
+  escrita exclusiva do Admin (`requireAdmin`); 409 para conflitos
+  (duplicado, usado), 400 para validação.
+
+**Frontend:**
+- [x] `Cupons.jsx` — listagem (código, desconto, validade, status com cores,
+  utilizado por/quando), filtros por status e busca por código,
+  criar/editar/excluir (Admin), botões desabilitados para cupom utilizado.
+- [x] Rota `/cupons` + item "Cupons" no menu + prefixo `/coupons` no proxy.
+
+**Testes executados:**
+- [x] `node -c` em tudo; migration 033 aplicada; `vite build` completo.
+- [x] Smoke tests: rotas novas retornam 401 sem sessão.
+- [x] 8 cenários de negócio testados no service contra o Postgres real:
+  criação (uppercase), duplicado bloqueado, status efetivo `expired`,
+  percentual >100 bloqueado, filtro por status efetivo, edição, bloqueio de
+  edição/exclusão de cupom usado, nome do cliente no cupom usado.
+- [x] Teste E2E pela interface (sessão Admin real): criar cupom pelo
+  formulário → aparece na listagem com status Ativo.
+- [ ] **Revisão externa (Codex CLI) pendente** — mesma cota esgotada da
+  Parte 1 (retomar retroativamente para as Partes 1 e 2 quando voltar).
+
+**Próxima parte da Fase 8:** Parte 3 — CRUD de Giftback/Cashback.
 
 ## Validação da Fase 7 em ambiente real (12/08/2026)
 

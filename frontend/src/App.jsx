@@ -20,6 +20,7 @@ import StatusSincronizacao from './views/StatusSincronizacao/StatusSincronizacao
 import Reguas from './views/Reguas/Reguas';
 import ReguasWinbackElegiveis from './views/Reguas/ReguasWinbackElegiveis';
 import Templates from './views/Templates/Templates';
+import Cupons from './views/Cupons/Cupons';
 
 // Componente que protege rotas autenticadas.
 function ProtectedRoute({ children }) {
@@ -89,6 +90,8 @@ function AppContent() {
         <Route path="/reguas/winback/:ruleId" element={<ReguasWinbackElegiveis />} />
 
         <Route path="/templates" element={<Templates />} />
+
+        <Route path="/cupons" element={<Cupons />} />
 
         <Route path="/vendedores" element={<Vendedores />} />
 

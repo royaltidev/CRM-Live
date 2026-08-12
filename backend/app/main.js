@@ -22,6 +22,7 @@ const syncController = require('./controllers/sync.controller');
 const automationRulesController = require('./controllers/automation-rules.controller');
 const winbackController = require('./controllers/winback.controller');
 const templatesController = require('./controllers/templates.controller');
+const couponsController = require('./controllers/coupons.controller');
 const { requireAuth, requireAdmin } = require('./middleware/auth.middleware');
 const whatsapp = require('./integrations/whatsapp');
 const { startMessageQueueJob } = require('./jobs/message-queue.job');
@@ -150,6 +151,15 @@ app.post(
   templatesController.uploadTemplateImage
 );
 app.get('/templates/:id/image', requireAuth, templatesController.downloadTemplateImage);
+
+// ===== Rotas de Cupons (Fase 8) =====
+
+// Leitura: Admin e Acesso Limitado (FSD 8.5). Escrita: exclusiva do Admin.
+app.get('/coupons', requireAuth, couponsController.listCoupons);
+app.post('/coupons', requireAuth, requireAdmin, couponsController.createCoupon);
+app.get('/coupons/:id', requireAuth, couponsController.getCouponById);
+app.patch('/coupons/:id', requireAuth, requireAdmin, couponsController.updateCoupon);
+app.delete('/coupons/:id', requireAuth, requireAdmin, couponsController.deleteCoupon);
 
 // ===== Tratamento de Erros Genérico =====
 

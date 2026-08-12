@@ -15,6 +15,7 @@ const TRIGGER_TYPES = [
   'nps_survey',
   'consumption_cycle',
   'first_identified_purchase',
+  'cross_sell',
 ];
 
 function validateRuleInput({ name, triggerType, conditions }, { partial = false } = {}) {

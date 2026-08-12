@@ -29,6 +29,7 @@ import CampaignOutlinedIcon from '@mui/icons-material/CampaignOutlined';
 import ArticleOutlinedIcon from '@mui/icons-material/ArticleOutlined';
 import ConfirmationNumberOutlinedIcon from '@mui/icons-material/ConfirmationNumberOutlined';
 import CardGiftcardOutlinedIcon from '@mui/icons-material/CardGiftcardOutlined';
+import SwapHorizOutlinedIcon from '@mui/icons-material/SwapHorizOutlined';
 import { useAuth } from '../contexts/AuthContext';
 
 const DRAWER_WIDTH = 260;
@@ -47,6 +48,7 @@ const MENU_ITEMS = [
   { label: 'Modelos de Mensagem', path: '/templates', icon: ArticleOutlinedIcon },
   { label: 'Cupons', path: '/cupons', icon: ConfirmationNumberOutlinedIcon },
   { label: 'Giftback / Cashback', path: '/giftback', icon: CardGiftcardOutlinedIcon },
+  { label: 'Cross-sell', path: '/cross-sell', icon: SwapHorizOutlinedIcon },
   { label: 'Sincronização Uniplus', path: '/status-sincronizacao', icon: SyncOutlinedIcon },
   { label: 'Gestão de Usuários', path: '/users', icon: ManageAccountsIcon, adminOnly: true },
 ];

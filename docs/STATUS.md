@@ -1,7 +1,7 @@
 # Status do Projeto — CRM Live
 
 **Última atualização:** 12/08/2026
-**Atualizado por:** Fase 8 — Parte 1 (Templates) implementada e testada; validação da Fase 7 em ambiente real
+**Atualizado por:** Fase 8 — Parte 4 (Cross-sell) implementada e testada; Parte 1 (Templates) implementada e testada; validação da Fase 7 em ambiente real
 
 ## Fase 8 — Parte 1: CRUD de Modelos de Mensagem (Templates) — 12/08/2026
 
@@ -145,8 +145,104 @@ responsável entre cada uma: (1) Templates, (2) Cupons, (3) Giftback,
 - [ ] **Revisão externa (Codex CLI) pendente** — mesma cota esgotada
   (retroativa para as Partes 1, 2 e 3 quando voltar).
 
-**Próxima parte da Fase 8:** Parte 4 — Cross-sell (produtos complementares
-+ régua automática pós-compra).
+## Fase 8 — Parte 4: Cross-sell (produtos complementares) — 12/08/2026
+
+**Decisão de design tomada nesta parte** (havia uma ambiguidade real no FSD,
+discutida com o responsável antes de codar — ver histórico da sessão): a
+tela de Cross-sell (12.9) NÃO tem campo de modelo de mensagem, mas
+`rules-engine.attemptRuleExecution` exige `message_template_id` em toda
+régua (renderiza sempre a partir de `message_templates.body_text` — nem a
+régua de incentivo ao cadastro foge disso, o cupom só vira uma variável
+`{{cupom}}` dentro do template escolhido pelo Admin). A saída adotada: a
+régua de cross-sell é criada pela MESMA tela genérica de Réguas (12.5),
+escolhendo o novo gatilho "Cross-sell" — sem criação automática/lazy de
+linha em `automation_rules`. A tela de Cross-sell cuida só da relação
+produto↔complemento e do percentual de desconto; sem uma régua ativa
+configurada em 12.5, nenhuma oferta é enviada (mesmo padrão de "bloqueado
+até configurar" do resto do sistema).
+
+**Backend:**
+- [x] Migration `034_add_cross_sell_trigger_type.js` — adiciona `'cross_sell'`
+  ao enum `trigger_type`. `automation-rules.service.js` (`TRIGGER_TYPES`)
+  atualizado para aceitar o novo valor na validação de régua.
+- [x] `products.service.js` + `products.controller.js` (novo) — leitura
+  apenas (`GET /products?search=&active=`), só para alimentar os seletores
+  de produto/complemento da tela de Cross-sell; nenhuma tela de catálogo
+  própria foi pedida.
+- [x] `complementary-products.service.js` + `.controller.js` (novo) — CRUD
+  sobre `complementary_products` (migration 011, já existia com todas as
+  FKs). `source` só é gravado como `'manual'`: a "revisão de sugestões
+  automáticas baseadas em histórico de vendas" citada no FSD 6.4 depende de
+  um critério de "comprados juntos" (frequência, janela de tempo) que o FSD
+  não define — mesmo tipo de parâmetro sem padrão já tratado em outras
+  fases (ex.: `rfm_criteria`). Fica pendente de decisão para uma fase
+  futura; o schema já suporta `'suggested'` quando isso acontecer.
+- [x] `automation-settings.service.js` ganhou
+  `getCrossSellDiscountPercent`/`setCrossSellDiscountPercent` (chave
+  `cross_sell_discount_percent`, sem valor padrão no FSD) — diferente dos
+  demais parâmetros deste arquivo, é editado diretamente na tela de
+  Cross-sell (não em Configurações), por isso tem escrita própria aqui.
+- [x] Rotas em `main.js` — leitura E escrita de `/complementary-products*`
+  liberadas a Admin e Acesso Limitado (`requireAuth` sem `requireAdmin`,
+  FSD linha 336 da matriz de permissões — diferente de Cupons/Giftback,
+  que são escrita exclusiva do Admin).
+- [x] `automation-trigger.service.js` ganhou `runCrossSellRules` (chamada
+  dentro de `processNewSale`, para toda venda nova, não só a primeira):
+  busca produtos complementares ativos para cada produto vendido, dedup por
+  complemento (mesmo complemento não é ofertado duas vezes na mesma venda),
+  e chama `rulesEngine.attemptRuleExecution` por régua ativa de gatilho
+  `cross_sell`, com `triggerReference = cross-sell-{saleId}-{complementaryProductId}`
+  (dedup entre execuções do job) e variáveis `{{nome}}`, `{{produto}}`,
+  `{{complementar}}`, `{{desconto}}`.
+
+**Frontend:**
+- [x] `Reguas.jsx` — `cross_sell` adicionado a `TRIGGER_TYPE_LABELS` e
+  `CREATABLE_TRIGGER_TYPES`; sem campos de condição extras (dispara para
+  qualquer produto vendido com complemento ativo), com alerta explicando as
+  variáveis disponíveis no modelo de mensagem.
+- [x] `CrossSell.jsx` (novo) — percentual de desconto (editável, com aviso
+  de "bloqueado até configurar" quando ausente); listagem de produtos
+  complementares (produto, complemento, origem, status), criar (Autocomplete
+  de produto/complemento com busca server-side em `GET /products`),
+  ativar/desativar, excluir; aviso de que também é preciso uma régua ativa
+  em Réguas de Relacionamento. Sem distinção Admin/Acesso Limitado (FSD
+  linha 336 libera os dois perfis) — diferente de Giftback/Cupons/Templates.
+- [x] Rota `/cross-sell` + item "Cross-sell" no menu + prefixos `/products`
+  e `/complementary-products` no proxy do Vite.
+
+**Testes executados:**
+- [x] `node -c` em tudo; `vite build` (via HMR do container, já que o build
+  local fora do Docker está bloqueado por um bug conhecido do npm/rollup
+  neste Mac, não relacionado a esta mudança); smoke tests: rotas novas
+  retornam 401 sem sessão.
+- [x] Teste E2E completo pela interface (sessão Admin real): configurar
+  percentual de desconto (10%) → cadastrar produto complementar (Tênis
+  Esportivo Runner → Camiseta Dry Fit, via Autocomplete) → criar modelo de
+  mensagem com as 4 variáveis → criar e ativar a régua "Cross-sell" em
+  Réguas de Relacionamento. Validação de par duplicado testada na interface
+  (bloqueada com mensagem clara). Toggle ativar/desativar testado.
+- [x] Teste funcional do gatilho, direto contra o Postgres real (venda de
+  demonstração existente, cliente com consentimento): `notifyNewSales`
+  gerou a mensagem `"Oi Patrícia Nunes! Que tal aproveitar 10% de desconto
+  em Camiseta Dry Fit, o combinado perfeito para o seu Tênis Esportivo
+  Runner?"` (todas as 4 variáveis renderizadas corretamente), execução
+  registrada em `automation_rule_executions` com status `sent`. Reexecutado
+  com a mesma venda: nenhuma duplicata criada (dedup confirmado).
+- [ ] **Revisão externa (Codex CLI) pendente** — mesma cota esgotada das
+  Partes 1-3 (retomar retroativamente quando a cota voltar).
+
+**Escopo explicitamente deixado de fora desta parte** (decisões de scoping,
+não pendências esquecidas):
+- Geração automática de sugestões de produto complementar a partir do
+  histórico de vendas (`source = 'suggested'`) — falta critério de
+  "comprados juntos" definido no FSD (ver decisão de design acima).
+- Atribuição de uma venda futura a uma oferta de cross-sell para fins de
+  relatório (FSD 13.4, passo 6) — não existe hoje tabela/coluna para isso;
+  provavelmente cabe na Fase de relatórios/dashboards, junto com a
+  atribuição por período já usada em campanhas.
+
+**Próxima parte da Fase 8:** Parte 5 — Campanhas manuais (segmento + modelo
++ agendamento).
 
 ## Validação da Fase 7 em ambiente real (12/08/2026)
 

@@ -3,8 +3,8 @@
 //
 // Contexto funcional (docs/FSD.md, seção 13.10, passo 5): ao final de cada
 // sincronização, o sistema deve acionar as automações relacionadas às novas
-// vendas (agradecimento pós-venda, incentivo ao cadastro) e às mudanças de
-// estoque (aviso de volta ao estoque).
+// vendas (agradecimento pós-venda, incentivo ao cadastro, cross-sell) e às
+// mudanças de estoque (aviso de volta ao estoque).
 //
 // A assinatura destas funções NÃO deve mudar, para não quebrar o chamador em
 // sync.service.js.
@@ -12,6 +12,8 @@
 const { crmPool } = require('../database/connection');
 const rulesEngine = require('./rules-engine.service');
 const welcomeCouponService = require('./welcome-coupon.service');
+const complementaryProductsService = require('./complementary-products.service');
+const automationSettingsService = require('./automation-settings.service');
 
 // Nome de um produto da venda para a variável {{produto}} do template.
 // Vendas com vários itens usam o primeiro: o FSD não define critério de
@@ -86,6 +88,74 @@ async function runFirstPurchaseRules({ sale, customer }) {
   }
 }
 
+// Produtos distintos vendidos nesta venda (para achar complementos de cada
+// um — diferente de findRepresentativeProductName, que pega só um para a
+// variável {{produto}} da régua de agradecimento).
+async function findSoldProducts(saleId) {
+  const result = await crmPool.query(
+    `SELECT DISTINCT p.id, p.name
+       FROM sale_items si
+       JOIN products p ON p.id = si.product_id
+      WHERE si.sale_id = $1`,
+    [saleId]
+  );
+  return result.rows;
+}
+
+// Cross-sell pós-compra (FSD 6.4, 12.9, 13.4, 14.6). Régua com gatilho
+// 'cross_sell' é criada pela tela genérica de Réguas (12.5), com template
+// próprio — este gatilho não gera mensagem sem uma régua ativa configurada
+// lá, nem sem o percentual de desconto configurado na tela de Cross-sell
+// (12.9). Um produto só gera oferta se tiver ao menos um complemento ativo.
+async function runCrossSellRules({ sale, customer, soldProducts }) {
+  if (soldProducts.length === 0) {
+    return;
+  }
+
+  const percent = await automationSettingsService.getCrossSellDiscountPercent();
+  if (percent === null || percent === undefined) {
+    return;
+  }
+
+  const rules = await rulesEngine.getActiveRulesByTrigger('cross_sell');
+  if (rules.length === 0) {
+    return;
+  }
+
+  // Um mesmo complemento pode ser sugerido por mais de um produto vendido
+  // nesta venda — dedup por id do complemento para não ofertar o mesmo
+  // produto duas vezes na mesma venda.
+  const offeredComplements = new Map();
+
+  for (const soldProduct of soldProducts) {
+    const complements = await complementaryProductsService.getActiveComplementsForProduct(soldProduct.id);
+    for (const complement of complements) {
+      if (!offeredComplements.has(complement.complementaryProductId)) {
+        offeredComplements.set(complement.complementaryProductId, {
+          productName: soldProduct.name,
+          complementName: complement.complementaryProductName,
+        });
+      }
+    }
+  }
+
+  for (const [complementaryProductId, offer] of offeredComplements) {
+    for (const rule of rules) {
+      await rulesEngine.attemptRuleExecution({
+        ruleId: rule.id,
+        customerId: customer.id,
+        triggerReference: `cross-sell-${sale.id}-${complementaryProductId}`,
+        templateVariables: {
+          nome: customer.name,
+          produto: offer.productName,
+          complementar: offer.complementName,
+          desconto: percent,
+        },
+      });
+    }
+  }
+}
+
 async function processNewSale(saleId) {
   const saleResult = await crmPool.query(
     'SELECT id, customer_id, seller_id, sale_date, total_amount FROM sales WHERE id = $1',
@@ -126,6 +196,9 @@ async function processNewSale(saleId) {
   if (isFirstPurchase) {
     await runFirstPurchaseRules({ sale, customer });
   }
+
+  const soldProducts = await findSoldProducts(sale.id);
+  await runCrossSellRules({ sale, customer, soldProducts });
 }
 
 // Notifica o motor de automações sobre vendas RECÉM-CRIADAS nesta

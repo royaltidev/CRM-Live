@@ -24,6 +24,8 @@ const winbackController = require('./controllers/winback.controller');
 const templatesController = require('./controllers/templates.controller');
 const couponsController = require('./controllers/coupons.controller');
 const giftbackController = require('./controllers/giftback.controller');
+const productsController = require('./controllers/products.controller');
+const complementaryProductsController = require('./controllers/complementary-products.controller');
 const { requireAuth, requireAdmin } = require('./middleware/auth.middleware');
 const whatsapp = require('./integrations/whatsapp');
 const { startMessageQueueJob } = require('./jobs/message-queue.job');
@@ -170,6 +172,17 @@ app.post('/giftbacks', requireAuth, requireAdmin, giftbackController.createGiftb
 app.get('/giftbacks/:id', requireAuth, giftbackController.getGiftbackById);
 app.patch('/giftbacks/:id', requireAuth, requireAdmin, giftbackController.updateGiftback);
 app.delete('/giftbacks/:id', requireAuth, requireAdmin, giftbackController.deleteGiftback);
+
+app.get('/products', requireAuth, productsController.listProducts);
+
+// Cross-sell (produtos complementares), FSD 6.4/12.9 — leitura E escrita
+// liberadas a Admin e Acesso Limitado (diferente de Cupons/Giftback acima).
+app.get('/complementary-products/settings/discount-percent', requireAuth, complementaryProductsController.getDiscountPercent);
+app.patch('/complementary-products/settings/discount-percent', requireAuth, complementaryProductsController.setDiscountPercent);
+app.get('/complementary-products', requireAuth, complementaryProductsController.listComplementaryProducts);
+app.post('/complementary-products', requireAuth, complementaryProductsController.createComplementaryProduct);
+app.patch('/complementary-products/:id/toggle-active', requireAuth, complementaryProductsController.toggleActive);
+app.delete('/complementary-products/:id', requireAuth, complementaryProductsController.deleteComplementaryProduct);
 
 // ===== Tratamento de Erros Genérico =====
 

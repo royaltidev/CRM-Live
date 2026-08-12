@@ -50,6 +50,7 @@ const TRIGGER_TYPE_LABELS = {
   nps_survey: 'Pesquisa de satisfação (NPS)',
   consumption_cycle: 'Ciclo de recompra',
   first_identified_purchase: 'Incentivo ao cadastro',
+  cross_sell: 'Cross-sell (produto complementar)',
 };
 
 // Gatilhos oferecidos no formulário de criação/edição — stock_replenished
@@ -61,6 +62,7 @@ const CREATABLE_TRIGGER_TYPES = [
   'nps_survey',
   'consumption_cycle',
   'first_identified_purchase',
+  'cross_sell',
 ];
 
 const STATUS_FILTER_OPTIONS = [
@@ -609,6 +611,15 @@ export default function Reguas() {
                 onChange={(e) => setForm({ ...form, days: e.target.value })}
               />
             </Box>
+          )}
+
+          {form.triggerType === 'cross_sell' && (
+            <Alert severity="info" sx={{ marginTop: 1, marginBottom: 1 }}>
+              Sem campos de condição — dispara para qualquer produto vendido que tenha um complemento
+              ativo cadastrado na tela de Cross-sell. Variáveis disponíveis no modelo de mensagem:{' '}
+              <strong>{'{{nome}}'}</strong>, <strong>{'{{produto}}'}</strong>,{' '}
+              <strong>{'{{complementar}}'}</strong> e <strong>{'{{desconto}}'}</strong>.
+            </Alert>
           )}
 
           {form.triggerType === 'sale_created' && (

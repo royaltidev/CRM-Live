@@ -18,6 +18,7 @@ const { crmPool } = require('../database/connection');
 const automationRulesService = require('./automation-rules.service');
 const messageQueueService = require('./message-queue.service');
 const conversationsService = require('./conversations.service');
+const templatesService = require('./templates.service');
 
 // Substitui variáveis {{nome}} no corpo do template pelos valores em
 // `variables`. Variável sem valor correspondente é removida (string vazia)
@@ -86,14 +87,20 @@ async function attemptRuleExecution({ ruleId, customerId, triggerReference, temp
   }
 
   try {
-    const templates = await automationRulesService.listActiveTemplates();
-    const template = templates.find((t) => t.id === rule.messageTemplateId);
-    if (!template) {
+    const template = await templatesService.getTemplateById(rule.messageTemplateId);
+    if (!template || !template.active) {
       const executionId = await recordExecution(ruleId, customerId, triggerReference, 'failed');
       return { status: 'failed', executionId, messageId: null };
     }
 
-    const body = renderTemplate(template.bodyText, templateVariables);
+    // Link do template (se houver) vai anexado ao final do texto — é o
+    // único jeito de "enviar" o link, já que a mensagem de WhatsApp é
+    // sempre um texto (a imagem, se houver, é resolvida separadamente por
+    // message-queue.service.js no momento do envio, via template_id).
+    let body = renderTemplate(template.bodyText, templateVariables);
+    if (template.linkUrl) {
+      body = `${body}\n\n${template.linkUrl}`;
+    }
     const conversationId = await conversationsService.getOrCreateConversationForCustomer(customerId);
 
     const enqueueResult = await messageQueueService.enqueueMessage({

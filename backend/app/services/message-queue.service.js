@@ -26,6 +26,7 @@
 const { crmPool } = require('../database/connection');
 const { isCustomerEligibleForMessage } = require('./consent.service');
 const whatsapp = require('../integrations/whatsapp');
+const templatesService = require('./templates.service');
 
 const SEND_WINDOW_KEY = 'message_send_window';
 const MONTHLY_LIMIT_KEY = 'message_monthly_limit_per_customer';
@@ -154,10 +155,16 @@ async function processQueueBatch() {
       ? settings.cadence.intervalSeconds * 1000
       : 0;
 
+  // LEFT JOIN até attachments: se o template da mensagem tiver uma imagem
+  // anexada no momento do envio, ela é enviada junto (FSD seção 21 —
+  // "enviada ao cliente como parte da mensagem"). Mensagens sem template
+  // (ex.: resposta manual futura) ou template sem imagem seguem como texto.
   const queuedResult = await crmPool.query(
-    `SELECT m.id, m.customer_id, m.body, c.phone_e164
+    `SELECT m.id, m.customer_id, m.body, c.phone_e164, a.file_path AS image_file_path
        FROM messages m
        JOIN customers c ON c.id = m.customer_id
+       LEFT JOIN message_templates mt ON mt.id = m.template_id
+       LEFT JOIN attachments a ON a.id = mt.image_attachment_id
       WHERE m.status = 'queued' AND m.direction = 'outbound'
       ORDER BY m.created_at ASC
       LIMIT $1`,
@@ -191,7 +198,13 @@ async function processQueueBatch() {
     }
 
     try {
-      const sendResult = await whatsapp.sendText({ to: message.phone_e164, body: message.body });
+      const sendResult = message.image_file_path
+        ? await whatsapp.sendImage({
+            to: message.phone_e164,
+            imagePath: templatesService.resolveAttachmentAbsolutePath(message.image_file_path),
+            caption: message.body,
+          })
+        : await whatsapp.sendText({ to: message.phone_e164, body: message.body });
       await crmPool.query(
         `UPDATE messages
             SET status = 'sent', sent_at = NOW(), external_message_id = $2

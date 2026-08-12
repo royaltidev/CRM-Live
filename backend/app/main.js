@@ -21,6 +21,7 @@ const messagesController = require('./controllers/messages.controller');
 const syncController = require('./controllers/sync.controller');
 const automationRulesController = require('./controllers/automation-rules.controller');
 const winbackController = require('./controllers/winback.controller');
+const templatesController = require('./controllers/templates.controller');
 const { requireAuth, requireAdmin } = require('./middleware/auth.middleware');
 const whatsapp = require('./integrations/whatsapp');
 const { startMessageQueueJob } = require('./jobs/message-queue.job');
@@ -128,6 +129,27 @@ app.patch('/automation-rules/:id/toggle-active', requireAuth, automationRulesCon
 
 app.get('/winback/eligible', requireAuth, winbackController.listEligible);
 app.post('/winback/resend', requireAuth, winbackController.resend);
+
+// ===== Rotas de Modelos de Mensagem / Templates (Fase 8) =====
+
+// Leitura: Admin e Acesso Limitado (FSD 8.1/8.5). Escrita: exclusiva do Admin.
+// IMPORTANTE: '/templates/:id/image' precisa vir depois de '/templates/:id'
+// aqui não é ambíguo (segmentos diferentes), mas mantemos a ordem lógica
+// mesma cautela já aplicada em /customers, /segments, /sellers.
+app.get('/templates', requireAuth, templatesController.listTemplates);
+app.post('/templates', requireAuth, requireAdmin, templatesController.createTemplate);
+app.get('/templates/:id', requireAuth, templatesController.getTemplateById);
+app.patch('/templates/:id', requireAuth, requireAdmin, templatesController.updateTemplate);
+app.patch('/templates/:id/toggle-active', requireAuth, requireAdmin, templatesController.toggleActive);
+app.delete('/templates/:id', requireAuth, requireAdmin, templatesController.deleteTemplate);
+app.post(
+  '/templates/:id/image',
+  requireAuth,
+  requireAdmin,
+  templatesController.uploadImageMiddleware,
+  templatesController.uploadTemplateImage
+);
+app.get('/templates/:id/image', requireAuth, templatesController.downloadTemplateImage);
 
 // ===== Tratamento de Erros Genérico =====
 

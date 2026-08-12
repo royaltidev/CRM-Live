@@ -13,7 +13,8 @@
 // Interface exportada (independente do provedor escolhido):
 //   - async function initialize()
 //   - async function sendText({ to, body })
-//   - async function sendImage({ to, imageUrl, caption })
+//   - async function sendImage({ to, imagePath, caption }) — imagePath é
+//     sempre um caminho de arquivo local (nunca uma URL remota)
 //   - function getConnectionStatus() -> { connected: boolean, lastEventAt: Date|null }
 //   - function onSessionDown(callback)
 //   - async function checkNumberStatus(phoneE164) -> { hasWhatsapp: boolean, waId: string|null }

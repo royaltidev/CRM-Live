@@ -18,10 +18,16 @@ ENV PUPPETEER_SKIP_DOWNLOAD=true \
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm install --omit=dev
+RUN npm install --omit=dev && \
+    md5sum package-lock.json | awk '{print $1}' > node_modules/.install-hash
 
 COPY . .
+RUN chmod +x docker-entrypoint.sh
 
 EXPOSE 3000
 
+# Ver docker-entrypoint.sh: reinstala node_modules automaticamente quando
+# package-lock.json muda e o volume nomeado (docker-compose.yml) está com
+# uma instalação antiga em cache.
+ENTRYPOINT ["./docker-entrypoint.sh"]
 CMD ["node", "app/main.js"]

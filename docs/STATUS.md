@@ -1,7 +1,75 @@
 # Status do Projeto — CRM Live
 
 **Última atualização:** 12/08/2026
-**Atualizado por:** validação da Fase 7 em ambiente real (Docker local do responsável, Mac Apple Silicon)
+**Atualizado por:** Fase 8 — Parte 1 (Templates) implementada e testada; validação da Fase 7 em ambiente real
+
+## Fase 8 — Parte 1: CRUD de Modelos de Mensagem (Templates) — 12/08/2026
+
+A Fase 8 está sendo construída em 5 partes, com checkpoint de autorização do
+responsável entre cada uma: (1) Templates, (2) Cupons, (3) Giftback,
+(4) Cross-sell, (5) Campanhas. **Parte 1 concluída e testada.**
+
+**Backend:**
+- [x] Migration `032_add_missing_template_foreign_keys.js` — adiciona 2 FKs
+  que faltavam desde a Fase 2: `message_templates.image_attachment_id` →
+  `attachments` (SET NULL) e `automation_rules.message_template_id` →
+  `message_templates` (RESTRICT — exclusão de template em uso por régua é
+  bloqueada pelo banco). Executada com sucesso no banco local.
+- [x] `templates.service.js` — CRUD completo + upload/substituição de imagem
+  (arquivo salvo com nome gerado em `storage/attachments/`, nunca o nome
+  original; anexo antigo preservado ao substituir, FSD seção 21) + resolução
+  de imagem para download autenticado. Exclusão bloqueada se o template já
+  foi usado em mensagem enviada (checagem explícita) ou por régua/campanha
+  (FK RESTRICT).
+- [x] `image-validation.util.js` — validação do tipo REAL do arquivo por
+  magic bytes (JPEG/PNG/WEBP), sem depender da extensão informada (FSD 21).
+- [x] `templates.controller.js` + rotas em `main.js` — leitura para todos,
+  escrita/upload exclusivos do Admin (`requireAdmin`); upload via `multer`
+  (memória, limite 5MB); download da imagem por rota autenticada.
+- [x] `automation-rules.service.listActiveTemplates()` refatorado para
+  reaproveitar `templates.service.js` (sem query duplicada).
+- [x] **Imagem e link do template agora chegam na mensagem enviada** (achado
+  da revisão do Codex): `rules-engine` anexa `link_url` ao corpo;
+  `message-queue` resolve o anexo do template no envio e usa
+  `whatsapp.sendImage` (com o texto como legenda) quando há imagem;
+  provider corrigido de `MessageMedia.fromUrl` para `fromFilePath`
+  (anexos são arquivos locais, nunca URL).
+- [x] `backend/docker-entrypoint.sh` (novo) — resolve dois problemas de
+  operação 24/7 em atualização de instalação existente: (a) reinstala
+  `node_modules` automaticamente quando `package-lock.json` muda (o volume
+  nomeado escondia dependências novas — backend caía com MODULE_NOT_FOUND
+  após `docker compose up --build`); (b) remove locks órfãos do Chromium
+  (`Singleton*`) do container anterior, que impediam o WhatsApp de
+  reconectar após recreate. `docker-compose.yml` também ganhou `init: true`
+  no backend (coleta de processos zumbis do Chromium).
+
+**Frontend:**
+- [x] `Templates.jsx` — listagem com prévia de imagem, filtro "mostrar
+  inativos", criar/editar (variáveis como chips, link, upload com prévia),
+  ativar/desativar, excluir com confirmação; campos de escrita só para
+  Admin (Acesso Limitado vê aviso e não vê ações de edição).
+- [x] Rota `/templates` em `App.jsx` + item "Modelos de Mensagem" no menu.
+- [x] Proxy do Vite: prefixo `/templates` adicionado + correção geral de
+  colisão rota-de-tela × prefixo-de-API (bypass por `Accept: text/html` —
+  F5 em `/templates` ou `/tags` agora carrega o app, não o JSON da API).
+
+**Testes executados:**
+- [x] `node -c` em todos os arquivos novos/alterados; `vite build` completo.
+- [x] Smoke tests: todas as rotas novas retornam 401 sem sessão.
+- [x] Teste funcional real pelo navegador (sessão Admin): criar template,
+  bloqueio de exclusão de template em uso ("Demo: Reativação", usado nas
+  mensagens do teste da Fase 7), upload de imagem (PNG real detectado por
+  conteúdo, arquivo em disco, `image_attachment_id` atualizado, download
+  autenticado retornando 200 na listagem).
+- [x] Entrypoint validado: rebuild com volume antigo detectou hash divergente
+  e rodou `npm install` sozinho; locks do Chromium limpos no boot; WhatsApp
+  reconectou sem intervenção manual após recreate.
+- [ ] **Revisão externa (Codex CLI) pendente**: a primeira rodada apontou 3
+  problemas (todos corrigidos acima); a rodada de confirmação não pôde
+  rodar — cota de uso do Codex esgotada até ~10/09/2026. Retomar a revisão
+  retroativa quando a cota voltar, antes de dar a Parte 1 por 100% fechada.
+
+**Próxima parte da Fase 8:** Parte 2 — CRUD de Cupons.
 
 ## Validação da Fase 7 em ambiente real (12/08/2026)
 

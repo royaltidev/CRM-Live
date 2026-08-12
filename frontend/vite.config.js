@@ -21,7 +21,23 @@ const apiPrefixes = [
   '/sync',
   '/automation-rules',
   '/winback',
+  '/templates',
 ];
+
+// Alguns prefixos de API colidem com uma rota de tela do React Router com o
+// mesmo caminho (ex.: "/tags" e "/templates" existem tanto como rota do
+// frontend quanto como prefixo de API). Sem isso, um F5 (navegação de página
+// inteira) nessas telas seria proxiado direto pro backend e mostraria o JSON
+// cru da API em vez do app React — chamadas via fetch() dentro do app
+// continuam funcionando normalmente (não fazem navegação de página).
+// `bypass` distingue os dois casos pelo header Accept: navegação de página
+// sempre manda "Accept: text/html", fetch() não.
+function bypassHtmlNavigation(req) {
+  if (req.headers.accept && req.headers.accept.includes('text/html')) {
+    return '/index.html';
+  }
+  return undefined;
+}
 
 export default defineConfig({
   plugins: [react()],
@@ -30,7 +46,7 @@ export default defineConfig({
     proxy: Object.fromEntries(
       apiPrefixes.map((prefix) => [
         prefix,
-        { target: backendTarget, changeOrigin: true },
+        { target: backendTarget, changeOrigin: true, bypass: bypassHtmlNavigation },
       ])
     ),
   },

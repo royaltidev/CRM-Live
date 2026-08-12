@@ -1,12 +1,11 @@
 // Serviço de réguas de relacionamento (FSD seções 6.3, 12.5, tabela
 // `automation_rules`, migration 012).
 //
-// CRUD de réguas + listagem de templates ativos (só leitura — o CRUD
-// completo de modelos de mensagem, upload de imagem etc. é escopo da
-// Fase 8; aqui só é preciso alimentar o campo de seleção de template ao
-// criar/editar uma régua).
+// CRUD de réguas + listagem de templates ativos (só leitura — reaproveita
+// templates.service.js, Fase 8, para não duplicar a query de templates).
 
 const { crmPool } = require('../database/connection');
+const templatesService = require('./templates.service');
 
 const TRIGGER_TYPES = [
   'sale_created',
@@ -160,12 +159,10 @@ async function toggleRuleActive(id, active) {
 }
 
 // Lista de templates ativos, só leitura — usada para alimentar o campo de
-// seleção ao criar/editar uma régua. CRUD completo de templates é Fase 8.
+// seleção ao criar/editar uma régua.
 async function listActiveTemplates() {
-  const result = await crmPool.query(
-    'SELECT id, name, body_text FROM message_templates WHERE active = true ORDER BY name'
-  );
-  return result.rows.map((row) => ({ id: row.id, name: row.name, bodyText: row.body_text }));
+  const templates = await templatesService.listTemplates({ includeInactive: false });
+  return templates.map(({ id, name, bodyText }) => ({ id, name, bodyText }));
 }
 
 module.exports = {

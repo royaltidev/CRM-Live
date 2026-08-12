@@ -133,16 +133,18 @@ async function sendText({ to, body }) {
   };
 }
 
-// Envia uma imagem com legenda opcional. `imageUrl` deve ser uma URL
-// publicamente acessível ou um caminho de arquivo local suportado pela lib.
-async function sendImage({ to, imageUrl, caption }) {
+// Envia uma imagem com legenda opcional. `imagePath` é sempre um caminho
+// de arquivo LOCAL (nossos anexos de template ficam em
+// backend/app/storage/attachments/, fora de qualquer rota pública — nunca
+// uma URL remota). Usa MessageMedia.fromFilePath, não fromUrl.
+async function sendImage({ to, imagePath, caption }) {
   if (!client || !initialized) {
     throw new Error('Cliente do WhatsApp Web não está inicializado.');
   }
 
   const { MessageMedia } = require('whatsapp-web.js');
   const chatId = await resolveChatId(to);
-  const media = await MessageMedia.fromUrl(imageUrl);
+  const media = MessageMedia.fromFilePath(imagePath);
   const result = await client.sendMessage(chatId, media, { caption });
 
   return {

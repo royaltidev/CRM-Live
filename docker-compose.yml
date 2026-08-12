@@ -32,6 +32,14 @@ services:
       context: ./backend
     container_name: crm-live-backend
     restart: unless-stopped
+    # Sem isso, o Node (PID 1) não coleta processos-filho zumbis do Chromium
+    # do Puppeteer/whatsapp-web.js quando eles travam ou são encerrados de
+    # forma abrupta — o perfil do navegador fica "em uso" indefinidamente
+    # (erro "The browser is already running for ...") até o container ser
+    # recriado do zero. `init: true` roda um processo init (tini) como PID 1,
+    # que faz essa coleta corretamente. Relevante para o requisito de rodar
+    # 24/7 sem supervisão (AGENTS.md, ambiente de produção).
+    init: true
     depends_on:
       - db
     volumes:

@@ -19,6 +19,7 @@ import LogDisparos from './views/LogDisparos/LogDisparos';
 import StatusSincronizacao from './views/StatusSincronizacao/StatusSincronizacao';
 import Reguas from './views/Reguas/Reguas';
 import ReguasWinbackElegiveis from './views/Reguas/ReguasWinbackElegiveis';
+import Templates from './views/Templates/Templates';
 
 // Componente que protege rotas autenticadas.
 function ProtectedRoute({ children }) {
@@ -86,6 +87,8 @@ function AppContent() {
 
         <Route path="/reguas" element={<Reguas />} />
         <Route path="/reguas/winback/:ruleId" element={<ReguasWinbackElegiveis />} />
+
+        <Route path="/templates" element={<Templates />} />
 
         <Route path="/vendedores" element={<Vendedores />} />
 

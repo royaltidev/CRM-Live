@@ -1,7 +1,7 @@
 # Status do Projeto — CRM Live
 
 **Última atualização:** 12/08/2026
-**Atualizado por:** Fase 8 — Parte 4 (Cross-sell) implementada e testada; Parte 1 (Templates) implementada e testada; validação da Fase 7 em ambiente real
+**Atualizado por:** Fase 8 — Parte 5 (Campanhas) implementada e testada, Fase 8 concluída; Parte 4 (Cross-sell) implementada e testada; Parte 1 (Templates) implementada e testada; validação da Fase 7 em ambiente real
 
 ## Fase 8 — Parte 1: CRUD de Modelos de Mensagem (Templates) — 12/08/2026
 
@@ -241,8 +241,133 @@ não pendências esquecidas):
   provavelmente cabe na Fase de relatórios/dashboards, junto com a
   atribuição por período já usada em campanhas.
 
-**Próxima parte da Fase 8:** Parte 5 — Campanhas manuais (segmento + modelo
-+ agendamento).
+## Fase 8 — Parte 5: Campanhas manuais — 12/08/2026 (Fase 8 concluída)
+
+**Decisão de design tomada nesta parte** (ambiguidade real no schema,
+discutida com o responsável antes de codar): `campaigns.giftback_rule_id`
+é uma FK para uma única linha de `giftback_credits`, mas
+`giftback_credits.customer_id` é `NOT NULL` — ou seja, seria o crédito de
+UM cliente, não um template reaproveitável pelos N destinatários da
+campanha (o próprio FSD, seção 11.2, comenta "conforme modelagem de
+emissão em massa" ao lado dessa coluna, como uma nota de pendência). Saída
+adotada: a campanha guarda os PARÂMETROS do crédito (percentual OU valor,
+validade) em colunas novas (`giftback_credit_percent/value/valid_until`,
+migration 035); no disparo, uma linha nova é criada em `giftback_credits`
+POR destinatário elegível, usando a relação `giftback_credits.campaign_id`
+que já existia desde a Parte 3 e nunca tinha sido usada.
+`campaigns.giftback_rule_id` fica sem uso (não populada pela UI, sem
+migration destrutiva).
+
+**Escopo desta tela** (decisão de simplicidade, não ambiguidade): o
+segmento de uma campanha é sempre um segmento SALVO (tela de Segmentação)
+— sem construtor de filtro ad-hoc duplicado na tela de Campanhas. Quem
+quiser uma campanha com um filtro específico ajusta/cria o segmento salvo
+antes. Sem segmento selecionado, a campanha atinge todos os clientes (mesma
+semântica de `buildCustomerFilterQuery({})`, sem condição = sem filtro).
+
+**Backend:**
+- [x] Migration `035_add_campaign_giftback_params.js` — 3 colunas novas em
+  `campaigns` para os parâmetros de giftback em massa (ver decisão acima).
+- [x] `campaigns.service.js` (novo) — CRUD de campanhas (rascunho/agendada
+  editável e excluível; enviada/cancelada não); `previewRecipients` (conta
+  candidatos totais vs. elegíveis com consentimento válido, em lote via
+  JOIN em `consents`, para não fazer N+1 numa campanha com centenas de
+  destinatários); `dispatchCampaign`/`sendCampaignNow`/`dispatchDueCampaigns`
+  (disparo real: renderiza o modelo via `rulesEngine.renderTemplate`
+  reaproveitado da Fase 7, enfileira cada mensagem via
+  `messageQueueService.enqueueMessage` — mesma fila, mesmo consentimento,
+  mesma cadência e janela de horário já validadas na Fase 6/7, nada
+  duplicado aqui — e emite giftback em massa quando configurado);
+  `getCampaignResults` (contagem de destinatários por status +
+  vendas/receita atribuídas); `attributeSaleToCampaigns` (ver abaixo).
+- [x] `message-queue.service.js` — `processQueueBatch` agora também espelha
+  o resultado do envio real em `campaign_recipients.status`
+  (pending → sent/failed), sem alterar nenhuma assinatura pública existente.
+- [x] `giftback.service.js` — `createGiftback` ganhou parâmetro opcional
+  `campaignId` (emissão em massa) + `validateGiftbackData` exportada
+  (reaproveitada por `campaigns.service.js`, sem duplicar a validação).
+- [x] `automation-settings.service.js` — `getCampaignAttributionDays`
+  (chave `campaign_attribution_days`, período de atribuição de venda a
+  campanha, FSD seção 20). Sem tela de Configurações ainda (não construída
+  nesta fase) — mesmo gap já aceito para `welcome_coupon_discount_percent`:
+  fica só leitura, sem padrão, "vendas atribuídas" aparece em branco até
+  ser configurado via banco.
+- [x] **Atribuição de venda por período fecha uma pendência real deixada
+  pelas Partes 2 e 3**: os comentários de `coupons.service.js` e
+  `giftback.service.js` já diziam explicitamente que "o fluxo que marca
+  cupom/giftback como usado é a atribuição por período de campanha (Parte
+  5)". Implementado como hook em `automation-trigger.service.js#processNewSale`
+  (toda venda nova, não só a primeira) chamando
+  `campaignsService.attributeSaleToCampaigns`: se o cliente foi
+  destinatário efetivo (`status` sent/delivered/responded) de uma campanha
+  enviada dentro do período configurado, marca o cupom da campanha (código
+  único, primeira venda atribuída "resgata") e/ou o giftback individual
+  desse cliente como usados, vinculando `used_in_sale_id`.
+- [x] `campaigns.controller.js` + `campaigns.job.js` (job periódico a cada
+  60s, dispara campanhas agendadas cuja hora chegou — mesmo padrão de
+  `message-queue.job.js`) + rotas `/campaigns*` em `main.js`. Leitura E
+  escrita liberadas a Admin e Acesso Limitado (FSD linha 332 da matriz).
+
+**Frontend:**
+- [x] `Campanhas.jsx` (novo) — listagem com filtro por status; criar/editar
+  (nome, segmento salvo opcional com pré-visualização ao vivo de
+  elegíveis/suprimidos, modelo de mensagem, cupom opcional, giftback em
+  massa opcional com campos condicionais, agendamento opcional);
+  "Enviar agora" com diálogo de confirmação mostrando a contagem real de
+  destinatários ANTES de confirmar (FSD 13.6, passo 5 — bloqueado se zero
+  elegíveis); cancelar; excluir; "Ver resultado" (destinatários por status
+  + vendas/receita atribuídas, com aviso claro quando o período de
+  atribuição ainda não foi configurado).
+- [x] Rota `/campanhas` + item "Campanhas" no menu + prefixo `/campaigns`
+  no proxy do Vite.
+
+**Testes executados:**
+- [x] `node -c` em tudo; smoke tests: rotas novas retornam 401 sem sessão.
+- [x] Teste funcional completo direto contra o Postgres real (script
+  Node dentro do container, sem mock): criar campanha com segmento
+  ad-hoc, modelo, cupom e giftback em massa → `previewRecipients` (2 de 8
+  elegíveis, 6 suprimidos por falta de consentimento — número batendo com
+  a base de demonstração) → disparo → 2 mensagens enfileiradas com
+  `{{nome}}`/`{{cupom}}` renderizados corretamente, 2 créditos de giftback
+  criados (um por destinatário, `campaign_id` correto), `coupons.campaign_id`
+  sincronizado. Processamento real da fila testado com **mock do provider
+  de WhatsApp** (sem enviar mensagem de verdade) confirmando
+  `campaign_recipients` avançando de `pending` para `sent`. Atribuição
+  testada inserindo uma venda de teste para um destinatário dentro do
+  período configurado: cupom marcado `used` com `used_in_sale_id` correto;
+  giftback do destinatário certo marcado `used`, o do outro destinatário
+  permaneceu `available` (não vazou entre clientes). Dados de teste
+  (campanha, cupom, giftback, venda, mensagens) removidos depois.
+- [x] **Cuidado de segurança durante o teste**: como a fila de mensagens já
+  roda 24/7 no ambiente Docker validado, as mensagens de teste criadas
+  ficariam reais na fila e seriam enviadas de verdade aos WhatsApp dos
+  clientes de teste do responsável assim que a janela de horário abrisse —
+  foram neutralizadas (`status = 'failed'`) imediatamente após cada teste,
+  antes de prosseguir.
+- [x] Teste E2E completo pela interface (sessão Admin real, via extensão do
+  Chrome — o navegador embutido da sessão não completa OAuth do Google):
+  criar campanha pelo formulário (modelo, cupom, giftback com campos
+  condicionais aparecendo/desaparecendo corretamente), diálogo de "Enviar
+  agora" mostrando a contagem real de elegíveis/suprimidos, excluir com
+  confirmação — cupom voltou a `campaign_id = NULL` e `status = active`
+  depois de excluir. Disparo real não foi confirmado na interface de
+  propósito (mesmo cuidado de segurança acima); a lógica de disparo em si
+  já tinha sido validada com mock no teste direto contra o Postgres.
+- [ ] **Revisão externa (Codex CLI) pendente** — mesma cota esgotada das
+  Partes 1-4 (retomar retroativamente quando a cota voltar).
+
+**Escopo explicitamente deixado de fora desta parte:**
+- Construtor de filtro ad-hoc dentro da tela de Campanhas (usa sempre um
+  segmento salvo — ver decisão de escopo acima).
+- Página de Configurações (12.11/12.13) para o parâmetro
+  `campaign_attribution_days` — mesmo gap já aceito para
+  `welcome_coupon_discount_percent` desde a Fase 7; fica pendente pra
+  quando essa tela existir.
+
+**Fase 8 concluída** (Templates, Cupons, Giftback, Cross-sell, Campanhas —
+5 partes). Nenhuma delas tem o carimbo final do Codex (cota esgotada desde
+a Parte 1) — recomenda-se uma revisão retroativa das 5 partes quando a cota
+voltar, antes de considerar a Fase 8 100% fechada.
 
 ## Validação da Fase 7 em ambiente real (12/08/2026)
 

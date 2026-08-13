@@ -105,7 +105,12 @@ function validateGiftbackData({ creditPercent, creditValue }) {
   }
 }
 
-async function createGiftback({ customerId, creditPercent, creditValue, validUntil }) {
+// `campaignId` é opcional — usado pela emissão em massa de giftback via
+// campanha (Fase 8, Parte 5), que cria uma linha por destinatário elegível
+// com o mesmo campaign_id (relação já existente desde a Parte 3,
+// giftback_credits.campaign_id). CRUD individual (tela de Giftback) nunca
+// passa esse parâmetro.
+async function createGiftback({ customerId, creditPercent, creditValue, validUntil, campaignId = null }) {
   if (!customerId) {
     throw new Error('Selecione o cliente que receberá o crédito.');
   }
@@ -118,11 +123,12 @@ async function createGiftback({ customerId, creditPercent, creditValue, validUnt
   }
 
   const result = await crmPool.query(
-    `INSERT INTO giftback_credits (customer_id, credit_percent, credit_value, valid_until)
-     VALUES ($1, $2, $3, $4)
+    `INSERT INTO giftback_credits (customer_id, campaign_id, credit_percent, credit_value, valid_until)
+     VALUES ($1, $2, $3, $4, $5)
      RETURNING id`,
     [
       customerId,
+      campaignId,
       creditPercent !== null && creditPercent !== undefined && creditPercent !== '' ? Number(creditPercent) : null,
       creditValue !== null && creditValue !== undefined && creditValue !== '' ? Number(creditValue) : null,
       validUntil || null,
@@ -193,4 +199,5 @@ module.exports = {
   createGiftback,
   updateGiftback,
   deleteGiftback,
+  validateGiftbackData,
 };

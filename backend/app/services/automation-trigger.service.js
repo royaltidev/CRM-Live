@@ -14,6 +14,7 @@ const rulesEngine = require('./rules-engine.service');
 const welcomeCouponService = require('./welcome-coupon.service');
 const complementaryProductsService = require('./complementary-products.service');
 const automationSettingsService = require('./automation-settings.service');
+const campaignsService = require('./campaigns.service');
 
 // Nome de um produto da venda para a variável {{produto}} do template.
 // Vendas com vários itens usam o primeiro: o FSD não define critério de
@@ -199,6 +200,11 @@ async function processNewSale(saleId) {
 
   const soldProducts = await findSoldProducts(sale.id);
   await runCrossSellRules({ sale, customer, soldProducts });
+
+  // Atribuição de venda a campanha por período (FSD 14.5) — marca cupom/
+  // giftback de campanha como usado quando aplicável. Independente de ser
+  // primeira compra ou não.
+  await campaignsService.attributeSaleToCampaigns({ sale, customer });
 }
 
 // Notifica o motor de automações sobre vendas RECÉM-CRIADAS nesta

@@ -23,6 +23,7 @@ import Templates from './views/Templates/Templates';
 import Cupons from './views/Cupons/Cupons';
 import Giftback from './views/Giftback/Giftback';
 import CrossSell from './views/CrossSell/CrossSell';
+import Campanhas from './views/Campanhas/Campanhas';
 
 // Componente que protege rotas autenticadas.
 function ProtectedRoute({ children }) {
@@ -98,6 +99,8 @@ function AppContent() {
         <Route path="/giftback" element={<Giftback />} />
 
         <Route path="/cross-sell" element={<CrossSell />} />
+
+        <Route path="/campanhas" element={<Campanhas />} />
 
         <Route path="/vendedores" element={<Vendedores />} />
 

@@ -26,11 +26,13 @@ const couponsController = require('./controllers/coupons.controller');
 const giftbackController = require('./controllers/giftback.controller');
 const productsController = require('./controllers/products.controller');
 const complementaryProductsController = require('./controllers/complementary-products.controller');
+const campaignsController = require('./controllers/campaigns.controller');
 const { requireAuth, requireAdmin } = require('./middleware/auth.middleware');
 const whatsapp = require('./integrations/whatsapp');
 const { startMessageQueueJob } = require('./jobs/message-queue.job');
 const { startUniplusSyncJob } = require('./jobs/uniplus-sync.job');
 const { startAutomationRulesJob } = require('./jobs/automation-rules.job');
+const { startCampaignsJob } = require('./jobs/campaigns.job');
 
 const app = express();
 
@@ -184,6 +186,17 @@ app.post('/complementary-products', requireAuth, complementaryProductsController
 app.patch('/complementary-products/:id/toggle-active', requireAuth, complementaryProductsController.toggleActive);
 app.delete('/complementary-products/:id', requireAuth, complementaryProductsController.deleteComplementaryProduct);
 
+// Campanhas manuais (FSD 6.4/12.6) — leitura E escrita liberadas a Admin e
+// Acesso Limitado (FSD linha 332 da matriz de permissões).
+app.post('/campaigns/preview-recipients', requireAuth, campaignsController.previewRecipients);
+app.get('/campaigns', requireAuth, campaignsController.listCampaigns);
+app.post('/campaigns', requireAuth, campaignsController.createCampaign);
+app.get('/campaigns/:id', requireAuth, campaignsController.getCampaignById);
+app.patch('/campaigns/:id', requireAuth, campaignsController.updateCampaign);
+app.delete('/campaigns/:id', requireAuth, campaignsController.deleteCampaign);
+app.post('/campaigns/:id/cancel', requireAuth, campaignsController.cancelCampaign);
+app.post('/campaigns/:id/send', requireAuth, campaignsController.sendCampaignNow);
+
 // ===== Tratamento de Erros Genérico =====
 
 app.use((err, req, res, next) => {
@@ -224,4 +237,8 @@ app.listen(settings.port, () => {
   // orientadas a evento (venda nova, incentivo ao cadastro) são acionadas
   // diretamente pela sincronização, via automation-trigger.service.js.
   startAutomationRulesJob();
+
+  // Inicia o disparo periódico de campanhas agendadas cuja hora já chegou
+  // (a cada 60s) — campaigns.service.js#dispatchDueCampaigns.
+  startCampaignsJob();
 });

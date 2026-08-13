@@ -13,6 +13,7 @@ const KEYS = {
   NPS_LOW_SCORE_THRESHOLD: 'nps_low_score_threshold',
   WELCOME_COUPON_DISCOUNT_PERCENT: 'welcome_coupon_discount_percent',
   CROSS_SELL_DISCOUNT_PERCENT: 'cross_sell_discount_percent',
+  CAMPAIGN_ATTRIBUTION_DAYS: 'campaign_attribution_days',
 };
 
 async function getSettingValue(key) {
@@ -80,6 +81,17 @@ async function setCrossSellDiscountPercent(percent, updatedBy) {
   return percent;
 }
 
+// Período (em dias) de atribuição de venda a campanha (FSD seção 20, 14.5):
+// uma compra do cliente dentro desse número de dias após o envio da
+// campanha é contada como resultado dela nos relatórios. Pertence à tela de
+// Configurações (12.11/12.13), ainda não construída — por isso, como
+// welcome_coupon_discount_percent, fica só leitura aqui e sem valor padrão
+// (relatório de "vendas atribuídas/receita" fica em branco até existir).
+async function getCampaignAttributionDays() {
+  const value = await getSettingValue(KEYS.CAMPAIGN_ATTRIBUTION_DAYS);
+  return value && Number.isFinite(value.days) ? value.days : null;
+}
+
 module.exports = {
   KEYS,
   getNpsSurveyDelayMinutes,
@@ -87,4 +99,5 @@ module.exports = {
   getWelcomeCouponDiscountPercent,
   getCrossSellDiscountPercent,
   setCrossSellDiscountPercent,
+  getCampaignAttributionDays,
 };

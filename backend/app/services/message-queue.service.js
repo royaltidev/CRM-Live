@@ -121,6 +121,26 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// Espelha o resultado do envio em `campaign_recipients` (Fase 8, Parte 5) —
+// só faz algo quando a mensagem pertence a uma campanha (campaignId !=
+// null). `campaign_recipients.status` é criado como 'pending' no disparo
+// (campaigns.service.js) e só avança pra 'sent'/'failed' aqui, no momento
+// real do envio pela fila — nunca regride um destinatário já marcado
+// 'suppressed' (sem consentimento no disparo).
+async function updateCampaignRecipientStatus(campaignId, customerId, status) {
+  if (!campaignId) {
+    return;
+  }
+
+  const sentAtSql = status === 'sent' ? ', sent_at = NOW()' : '';
+  await crmPool.query(
+    `UPDATE campaign_recipients
+        SET status = $3${sentAtSql}
+      WHERE campaign_id = $1 AND customer_id = $2 AND status = 'pending'`,
+    [campaignId, customerId, status]
+  );
+}
+
 // Processa um lote de mensagens da fila. Chamado periodicamente pelo job
 // (backend/app/jobs/message-queue.job.js).
 async function processQueueBatch() {
@@ -160,7 +180,7 @@ async function processQueueBatch() {
   // "enviada ao cliente como parte da mensagem"). Mensagens sem template
   // (ex.: resposta manual futura) ou template sem imagem seguem como texto.
   const queuedResult = await crmPool.query(
-    `SELECT m.id, m.customer_id, m.body, c.phone_e164, a.file_path AS image_file_path
+    `SELECT m.id, m.customer_id, m.body, m.campaign_id, c.phone_e164, a.file_path AS image_file_path
        FROM messages m
        JOIN customers c ON c.id = m.customer_id
        LEFT JOIN message_templates mt ON mt.id = m.template_id
@@ -184,6 +204,7 @@ async function processQueueBatch() {
     const eligible = await isCustomerEligibleForMessage(message.customer_id);
     if (!eligible) {
       await crmPool.query(`UPDATE messages SET status = 'failed' WHERE id = $1`, [message.id]);
+      await updateCampaignRecipientStatus(message.campaign_id, message.customer_id, 'failed');
       failed += 1;
       continue;
     }
@@ -211,10 +232,12 @@ async function processQueueBatch() {
           WHERE id = $1`,
         [message.id, sendResult && sendResult.externalMessageId ? sendResult.externalMessageId : null]
       );
+      await updateCampaignRecipientStatus(message.campaign_id, message.customer_id, 'sent');
       processed += 1;
     } catch (err) {
       console.error(`[message-queue] Falha ao enviar mensagem id=${message.id}:`, err.message);
       await crmPool.query(`UPDATE messages SET status = 'failed' WHERE id = $1`, [message.id]);
+      await updateCampaignRecipientStatus(message.campaign_id, message.customer_id, 'failed');
       failed += 1;
     }
 

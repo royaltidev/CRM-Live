@@ -26,6 +26,7 @@ const sellersService = require('./sellers.service');
 const conversationsService = require('./conversations.service');
 const consentService = require('./consent.service');
 const leadIntentService = require('./lead-intent.service');
+const npsService = require('./nps.service');
 const whatsapp = require('../integrations/whatsapp');
 
 const REASON_LABELS = {
@@ -206,7 +207,14 @@ async function resolveConsentGate({ customer, conversationId, body }) {
 // Processa uma mensagem recebida do cliente (chamado pelo listener do
 // provider WhatsApp — ver backend/app/integrations/whatsapp). Implementa o
 // fluxo completo do FSD 13.7 (+ opt-out, FSD 13.8, que tem prioridade: uma
-// mensagem de saída não é tratada como lead).
+// mensagem de saída não é tratada como lead) e a captura de nota de NPS
+// (FSD 13.9, Fase 10 — ver nps.service.js).
+//
+// Uma nota de NPS reconhecida tem prioridade sobre o gate de consentimento
+// e a classificação de intenção: o cliente só recebe a pesquisa depois de já
+// ter consentimento válido (a fila de envio garante isso), e uma nota
+// numérica não é uma mensagem de lead — mandá-la pro classificador geraria
+// um encaminhamento indevido a vendedor.
 async function processInboundMessage({ from, body }) {
   const customer = await customersService.getCustomerByPhone(from);
 
@@ -226,15 +234,20 @@ async function processInboundMessage({ from, body }) {
   let forwarded = null;
   let intent = null;
   let consentGate = null;
+  let npsResponse = null;
 
   if (!optedOut) {
-    consentGate = await resolveConsentGate({ customer, conversationId, body });
+    npsResponse = await npsService.captureNpsResponse({ customerId: customer.id, body });
 
-    if (consentGate === 'opted_in') {
-      intent = await leadIntentService.classifyLeadIntent({ messageBody: body });
+    if (!npsResponse) {
+      consentGate = await resolveConsentGate({ customer, conversationId, body });
 
-      if (intent === 'purchase_intent' || intent === 'doubt') {
-        forwarded = await forwardLeadToSeller({ conversationId, customer, reason: intent });
+      if (consentGate === 'opted_in') {
+        intent = await leadIntentService.classifyLeadIntent({ messageBody: body });
+
+        if (intent === 'purchase_intent' || intent === 'doubt') {
+          forwarded = await forwardLeadToSeller({ conversationId, customer, reason: intent });
+        }
       }
     }
   }
@@ -245,6 +258,7 @@ async function processInboundMessage({ from, body }) {
     conversationId,
     optedOut,
     interruptedAutomations: interruptedCount,
+    npsResponse,
     consentGate,
     intent,
     forwarded,

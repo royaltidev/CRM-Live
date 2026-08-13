@@ -260,8 +260,8 @@ Decisões técnicas tomadas durante a preparação do terreno (07/08/2026), para
 **Objetivo:** implementar o módulo 6.8 — pesquisa de satisfação, alerta de nota baixa e ações de tratamento.
 
 **Checklist:**
-- [ ] Registro de resposta de NPS (`nps_responses`).
-- [ ] Alerta imediato ao Administrador para nota ≤ limite configurável (padrão 6).
+- [x] Registro de resposta de NPS (`nps_responses`) — Parte 1, 13/08/2026.
+- [ ] Alerta imediato ao Administrador para nota ≤ limite configurável (padrão 6) — dado gravado na Parte 1 (`status = 'low_score_open'`), falta o destaque visual na tela de gestão (Parte 2).
 - [ ] Tela de gestão de NPS (agrupado por faixa, filtros por período/vendedor/categoria).
 - [ ] Ações sobre nota: enviar mensagem padronizada, oferecer desconto/voucher, localizar vendedor responsável.
 - [ ] Histórico de tratamento (`nps_treatments`), estrutura extensível para novas ações futuras.

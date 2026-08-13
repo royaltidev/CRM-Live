@@ -1,7 +1,85 @@
 # Status do Projeto — CRM Live
 
 **Última atualização:** 13/08/2026
-**Atualizado por:** Fase 9 (Caixa de entrada, atendimento e encaminhamento de lead) implementada e testada, Fase 9 concluída; Fase 8 — Parte 5 (Campanhas) implementada e testada, Fase 8 concluída; Parte 4 (Cross-sell) implementada e testada; Parte 1 (Templates) implementada e testada; validação da Fase 7 em ambiente real
+**Atualizado por:** Fase 10 — Parte 1 (captura de resposta de NPS) implementada e testada; Fase 9 (Caixa de entrada, atendimento e encaminhamento de lead) implementada e testada, Fase 9 concluída; Fase 8 — Parte 5 (Campanhas) implementada e testada, Fase 8 concluída; Parte 4 (Cross-sell) implementada e testada; Parte 1 (Templates) implementada e testada; validação da Fase 7 em ambiente real
+
+## Fase 10 — Parte 1: Captura de resposta de NPS — 13/08/2026
+
+**Objetivo (FSD seções 6.8, 12.12, 13.9):** capturar a nota que o cliente
+responde à pesquisa de satisfação (já disparada pela régua `nps_survey`
+desde a Fase 7) e sinalizar nota baixa para tratamento. A Fase 10 está
+sendo construída em 3 partes, com checkpoint de autorização do responsável
+entre cada uma: (1) Captura da resposta + alerta, (2) Tela de gestão de
+NPS, (3) Ações de tratamento. **Parte 1 concluída e testada.**
+
+### Decisões de design (ambiguidades do FSD resolvidas nesta parte)
+
+- **Formato aceito para a resposta:** o FSD não define nenhum formato.
+  Decisão: só é reconhecida como nota de NPS uma mensagem cujo conteúdo
+  INTEIRO seja um número de 0 a 10 (com "nota" opcional na frente ou "/10"
+  no final — ex.: "9", "nota 9", "9/10") — nunca um número embutido em
+  frase livre (ex.: "entreguei em 9 dias" não vira nota 9, pra não gerar
+  falso positivo numa nota real de satisfação). Mensagem que não bate nesse
+  formato não é tratada como resposta de NPS e segue o fluxo normal da
+  caixa de entrada (Fase 9). Ver `backend/app/services/nps.service.js`.
+- **Prioridade da nota de NPS sobre o fluxo de lead da Fase 9:** uma
+  pesquisa pendente é checada logo após o opt-out, ANTES do gate de
+  consentimento e da classificação de intenção — se a mensagem for
+  reconhecida como nota, o restante do pipeline (consentimento/IA/
+  encaminhamento) é pulado. Justificativa: o cliente só recebe a pesquisa
+  depois de já ter consentimento válido (a fila de envio garante isso), e
+  uma nota numérica não é uma mensagem de lead — mandá-la pro classificador
+  de intenção geraria um encaminhamento indevido a vendedor. Ver
+  `backend/app/services/inbox.service.js#processInboundMessage`.
+- **"Alerta imediato ao Administrador" (6.8/12.12):** não existe nenhum
+  canal de notificação push/e-mail/WhatsApp para o Administrador em
+  nenhuma outra parte do sistema (a tabela `users` nem tem telefone
+  cadastrado — só conta Google). Resolvido como o "alerta destacado"
+  citado literalmente em 12.12: a captura já grava
+  `nps_responses.status = 'low_score_open'` imediatamente quando a nota é
+  ≤ limite configurado; a tela de gestão de NPS (Parte 2) é quem vai
+  destacar isso visualmente. Sem inventar um canal de notificação externo
+  que não existe em nenhum outro lugar do sistema.
+
+### Implementação
+
+- `backend/app/services/nps.service.js` (novo) — `parseNpsScore` (parser
+  estrito, ver decisão acima), `findPendingNpsResponse`,
+  `captureNpsResponse` (usa `automation-settings.service.js#getNpsLowScoreThreshold`,
+  já existente desde a Fase 7, com padrão 6 do FSD).
+- `backend/app/services/inbox.service.js#processInboundMessage` — chama
+  `npsService.captureNpsResponse` logo após o opt-out; quando captura,
+  pula o gate de consentimento e a classificação de intenção (ver decisão
+  acima). Retorno da função ganhou o campo `npsResponse`.
+
+### Testes realizados
+
+- `node -c` nos arquivos novo/alterado.
+- 13 casos de `parseNpsScore` isolados (números simples, "nota N", "N/10",
+  espaços/pontuação, número embutido em frase livre, fora da faixa 0–10,
+  string vazia) — todos corretos.
+- Testes diretos contra o Postgres real (via `docker compose exec backend
+  node -e`), cliente de teste real com consentimento válido (Thiago
+  Batista): nota alta → `answered`; nota baixa → `low_score_open`; nota no
+  limite exato (6) → `low_score_open` (`<=`, não `<`); mensagem não
+  numérica com pesquisa pendente → não captura, linha continua `pending`;
+  sem pesquisa pendente → não captura; `processInboundMessage` completo com
+  pesquisa pendente → nota capturada corretamente E confirmado que não
+  classificou intenção, não encaminhou lead e não acionou o gate de
+  consentimento (short-circuit funcionando). Nenhum `lead_forwards` criado
+  indevidamente. Backend reiniciado antes do teste (`docker compose restart
+  backend`), sem erros no log.
+- Todo dado de teste (linhas de `nps_responses`, mensagens inseridas na
+  conversa de teste) limpo ao final; status e `last_message_at` da conversa
+  do cliente de teste restaurados ao valor original — conferido por query
+  após a limpeza.
+
+### Pendências desta parte (cobertas nas próximas)
+
+- Nenhuma tela ainda consome `nps_responses`/`low_score_open` — a captura
+  funciona, mas o Administrador só vai "ver" o alerta destacado na Parte 2
+  (Tela de gestão de NPS).
+- Ações de tratamento (`nps_treatments`) ficam pra Parte 3.
 
 ## Fase 9 — Caixa de entrada, atendimento e encaminhamento de lead — 13/08/2026
 

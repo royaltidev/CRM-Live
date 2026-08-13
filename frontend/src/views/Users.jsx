@@ -9,6 +9,8 @@ import {
   TableHead,
   TableRow,
   Button,
+  IconButton,
+  TextField,
   CircularProgress,
   Alert,
   Dialog,
@@ -17,6 +19,7 @@ import {
   DialogActions,
   Typography,
 } from '@mui/material';
+import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -28,6 +31,10 @@ export default function Users() {
   const [error, setError] = useState(null);
   const [selectedUser, setSelectedUser] = useState(null);
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
+  const [phoneDialogUser, setPhoneDialogUser] = useState(null);
+  const [phoneDialogValue, setPhoneDialogValue] = useState('');
+  const [phoneSaving, setPhoneSaving] = useState(false);
+  const [phoneError, setPhoneError] = useState(null);
 
   // Redireciona se não for admin.
   useEffect(() => {
@@ -96,6 +103,38 @@ export default function Users() {
     }
   }
 
+  function openPhoneDialog(user) {
+    setPhoneDialogUser(user);
+    setPhoneDialogValue(user.whatsappPhone || '');
+    setPhoneError(null);
+  }
+
+  async function savePhone() {
+    try {
+      setPhoneSaving(true);
+      setPhoneError(null);
+
+      const response = await fetch(`/users/${phoneDialogUser.id}/whatsapp-phone`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ whatsappPhone: phoneDialogValue }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Falha ao salvar o WhatsApp');
+      }
+
+      await loadUsers();
+      setPhoneDialogUser(null);
+    } catch (err) {
+      setPhoneError(err.message || 'Erro ao salvar o WhatsApp');
+    } finally {
+      setPhoneSaving(false);
+    }
+  }
+
   const formatDate = (dateString) => {
     if (!dateString) return '—';
     return new Date(dateString).toLocaleDateString('pt-BR', {
@@ -143,6 +182,7 @@ export default function Users() {
                 <TableCell sx={{ fontWeight: 700 }}>E-mail</TableCell>
                 <TableCell sx={{ fontWeight: 700 }}>Nome</TableCell>
                 <TableCell sx={{ fontWeight: 700 }}>Papel</TableCell>
+                <TableCell sx={{ fontWeight: 700 }}>WhatsApp (alerta de NPS)</TableCell>
                 <TableCell sx={{ fontWeight: 700 }}>Status</TableCell>
                 <TableCell sx={{ fontWeight: 700 }}>Primeiro Acesso</TableCell>
                 <TableCell sx={{ fontWeight: 700 }}>Último Acesso</TableCell>
@@ -170,6 +210,14 @@ export default function Users() {
                       }}
                     >
                       {user.role === 'admin' ? 'Admin' : 'Limitado'}
+                    </Box>
+                  </TableCell>
+                  <TableCell>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                      {user.whatsappPhone || '—'}
+                      <IconButton size="small" onClick={() => openPhoneDialog(user)}>
+                        <EditOutlinedIcon fontSize="inherit" />
+                      </IconButton>
                     </Box>
                   </TableCell>
                   <TableCell>
@@ -233,6 +281,37 @@ export default function Users() {
             variant="contained"
           >
             Desativar
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Diálogo de edição do WhatsApp de alerta de NPS */}
+      <Dialog open={Boolean(phoneDialogUser)} onClose={() => setPhoneDialogUser(null)}>
+        <DialogTitle>WhatsApp de {phoneDialogUser?.email}</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" sx={{ marginTop: 1, marginBottom: 2, color: '#666666' }}>
+            Usado só para o alerta imediato de nota de satisfação (NPS) baixa, quando este usuário for Administrador.
+            Deixe em branco para desativar o alerta para este usuário.
+          </Typography>
+          {phoneError && (
+            <Alert severity="error" sx={{ marginBottom: 2 }}>
+              {phoneError}
+            </Alert>
+          )}
+          <TextField
+            label="WhatsApp"
+            placeholder="+55 11 91234-5678"
+            fullWidth
+            value={phoneDialogValue}
+            onChange={(e) => setPhoneDialogValue(e.target.value)}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setPhoneDialogUser(null)} disabled={phoneSaving}>
+            Cancelar
+          </Button>
+          <Button onClick={savePhone} variant="contained" disabled={phoneSaving}>
+            Salvar
           </Button>
         </DialogActions>
       </Dialog>

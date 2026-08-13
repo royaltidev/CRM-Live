@@ -30,6 +30,7 @@ const campaignsController = require('./controllers/campaigns.controller');
 const settingsController = require('./controllers/settings.controller');
 const inboxController = require('./controllers/inbox.controller');
 const inboxService = require('./services/inbox.service');
+const npsController = require('./controllers/nps.controller');
 const { requireAuth, requireAdmin } = require('./middleware/auth.middleware');
 const whatsapp = require('./integrations/whatsapp');
 const { startMessageQueueJob } = require('./jobs/message-queue.job');
@@ -67,6 +68,7 @@ app.get('/users', requireAuth, requireAdmin, usersController.listUsers);
 
 // Desativar um usuário.
 app.patch('/users/:id/deactivate', requireAuth, requireAdmin, usersController.deactivateUser);
+app.patch('/users/:id/whatsapp-phone', requireAuth, requireAdmin, usersController.updateWhatsappPhone);
 
 // ===== Rotas de Clientes e Tags (Fase 5 — Admin e Acesso Limitado) =====
 
@@ -179,6 +181,7 @@ app.patch('/giftbacks/:id', requireAuth, requireAdmin, giftbackController.update
 app.delete('/giftbacks/:id', requireAuth, requireAdmin, giftbackController.deleteGiftback);
 
 app.get('/products', requireAuth, productsController.listProducts);
+app.get('/products/categories', requireAuth, productsController.listCategories);
 
 // Cross-sell (produtos complementares), FSD 6.4/12.9 — leitura E escrita
 // liberadas a Admin e Acesso Limitado (diferente de Cupons/Giftback acima).
@@ -205,6 +208,13 @@ app.post('/campaigns/:id/send', requireAuth, campaignsController.sendCampaignNow
 app.get('/inbox/conversations', requireAuth, requireAdmin, inboxController.listConversations);
 app.get('/inbox/conversations/:id', requireAuth, requireAdmin, inboxController.getConversationById);
 app.post('/inbox/conversations/:id/reply', requireAuth, requireAdmin, inboxController.sendManualReply);
+
+// ===== Rotas de Gestão de NPS (FSD 12.12/22.6 — leitura liberada a Admin e
+// Acesso Limitado; ações sobre a nota ficam para a Parte 3, exclusivas do
+// Administrador) =====
+
+app.get('/nps/responses', requireAuth, npsController.listResponses);
+app.get('/nps/responses/export', requireAuth, npsController.exportResponses);
 
 // ===== Rotas de Configurações (FSD 12.13 — exclusivas do Admin) =====
 

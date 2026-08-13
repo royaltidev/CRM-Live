@@ -1,7 +1,141 @@
 # Status do Projeto — CRM Live
 
 **Última atualização:** 13/08/2026
-**Atualizado por:** Fase 10 — Parte 1 (captura de resposta de NPS) implementada e testada; Fase 9 (Caixa de entrada, atendimento e encaminhamento de lead) implementada e testada, Fase 9 concluída; Fase 8 — Parte 5 (Campanhas) implementada e testada, Fase 8 concluída; Parte 4 (Cross-sell) implementada e testada; Parte 1 (Templates) implementada e testada; validação da Fase 7 em ambiente real
+**Atualizado por:** Fase 10 — alerta de nota baixa por WhatsApp ao Administrador implementado e testado; Parte 2 (tela de gestão de NPS) implementada e testada; Parte 1 (captura de resposta de NPS) implementada e testada; Fase 9 (Caixa de entrada, atendimento e encaminhamento de lead) implementada e testada, Fase 9 concluída; Fase 8 — Parte 5 (Campanhas) implementada e testada, Fase 8 concluída; Parte 4 (Cross-sell) implementada e testada; Parte 1 (Templates) implementada e testada; validação da Fase 7 em ambiente real
+
+## Fase 10 — Extensão: alerta de nota baixa por WhatsApp ao Administrador — 13/08/2026
+
+**Contexto:** revisitando a decisão da Parte 1 (que resolvia "alerta
+imediato ao Administrador" só como destaque visual na tela de NPS), o
+responsável do projeto pediu um canal proativo de verdade. Escopo NOVO,
+fora do FSD original (que não define telefone de usuário nem esse canal).
+
+- **Onde guardar o número:** coluna nova `users.whatsapp_phone` (migration
+  `037_add_whatsapp_phone_to_users.js`, nullable), não em
+  `system_settings` — é um dado de contato de UM usuário específico
+  (decisão explícita do responsável, contrária à minha proposta inicial de
+  guardar como parâmetro de loja).
+- **Quem recebe:** todo usuário com `role = 'admin'`, `active = true` e
+  `whatsapp_phone` preenchido (não assume que existe só um Administrador,
+  embora o FSD trate o papel como singular na prática).
+- **Gatilho e envio:** `nps.service.js#captureNpsResponse` chama
+  `notifyAdminsOfLowScore` sempre que o status calculado é
+  `low_score_open`; envio direto via `whatsapp.sendText`, fora da fila —
+  mesmo padrão de `inbox.service.js#forwardLeadToSeller` (Fase 9): é aviso
+  operacional interno, não mensagem a cliente, não se aplica cadência/
+  janela de horário. Falha ao enviar é só logada, nunca bloqueia a captura
+  da nota.
+- **Edição do número:** tela **Gestão de Usuários** (`Users.jsx`, já
+  existente, exclusiva do Admin) ganhou uma coluna "WhatsApp (alerta de
+  NPS)" com edição via diálogo (`PATCH /users/:id/whatsapp-phone`);
+  validação de formato reaproveita a mesma regex de
+  `sellers.service.js#PHONE_REGEX`.
+
+### Testes realizados
+
+- Testes diretos contra o Postgres real: validação rejeita formato
+  inválido, aceita e persiste formato válido, `notifyAdminsOfLowScore` não
+  lança mesmo com o envio falhando (sessão do WhatsApp deste ambiente não
+  pareada — confirmado que a falha é só logada), `captureNpsResponse` com
+  nota baixa aciona a notificação corretamente. Número de teste removido
+  ao final (`whatsapp_phone` do usuário real restaurado para `null`).
+- Teste real de UI (extensão Chrome, sessão Admin autenticada, conta real
+  `wrufino@gmail.com`): coluna nova aparece na tela de Gestão de Usuários,
+  diálogo de edição abre com o texto explicativo, salva e persiste (visível
+  após reload), removido de volta ao final do teste (não deixei nenhum
+  número de teste cadastrado na conta real — cabe ao responsável cadastrar
+  o próprio número quando quiser usar o alerta).
+- `node -c` nos arquivos alterados; `vite build` completo sem erros.
+
+## Fase 10 — Parte 2: Tela de gestão de NPS — 13/08/2026
+
+**Objetivo (FSD seções 12.12, 22.6):** tela de consulta das notas de
+satisfação, agrupadas por faixa, com filtros e exportação CSV. Leitura
+disponível a Administrador e Acesso Limitado (22.6); ações sobre a nota
+ficam para a Parte 3. **Parte 2 concluída e testada.**
+
+### Decisões de design (ambiguidades do FSD resolvidas nesta parte)
+
+- **"Agrupado por faixa":** adotadas as faixas padrão da metodologia NPS —
+  Detrator (0–6), Neutro (7–8), Promotor (9–10) — não o limite de nota
+  baixa configurável (`nps_low_score_threshold`, Parte 1). São conceitos
+  diferentes: a faixa é uma classificação fixa e universal do NPS
+  (glossário do FSD, seção 24); o limite configurável só decide quando o
+  alerta de nota baixa dispara. As duas coisas coincidem no valor padrão
+  (6) por convenção da própria metodologia, não por acoplamento no código.
+- **Filtro de "período":** usa `survey_sent_at` (sempre preenchido, mesmo
+  pra pesquisa ainda sem resposta), não `responded_at` (nulo enquanto
+  pendente) — evita esconder pesquisas pendentes de um filtro de período
+  válido.
+- **Coluna/filtro "produto/categoria":** uma venda pode ter itens de
+  categorias diferentes; a coluna exibe todas as categorias distintas da
+  venda (agregadas, `STRING_AGG`), e o filtro casa se QUALQUER item da
+  venda pertencer à categoria escolhida — mesmo critério "ao menos um item
+  corresponde" já usado em outras telas do sistema.
+- **Escopo da listagem:** inclui TODAS as notas (`pending`, `answered`,
+  `low_score_open`, `low_score_treated`), não só as respondidas — o próprio
+  enum de `status` já modela "aguardando resposta" como um estado
+  relevante de acompanhamento, e escondê-lo reduziria a visibilidade da
+  tela sem necessidade.
+- **"Alerta destacado" (12.12):** notas `low_score_open` aparecem sempre
+  primeiro na ordenação e com linha destacada em vermelho na tabela —
+  completa a decisão da Parte 1 (que só gravava o dado; a exibição ficou
+  para cá).
+
+### Implementação
+
+- `backend/app/services/nps.service.js` — `SCORE_BANDS` (faixas fixas),
+  `buildNpsFilters` (faixa/período/vendedor/categoria), `listNpsResponses`
+  (paginado) e `listNpsResponsesForExport` (mesmos filtros, sem paginação,
+  para o CSV) — reaproveitam o mesmo SELECT/ORDER (`sale_items`/`products`
+  para produto/categoria, `sales`/`sellers` para vendedor).
+- `backend/app/controllers/nps.controller.js` (novo) — `listResponses`,
+  `exportResponses` (CSV com BOM UTF-8, compatibilidade com Excel).
+- `backend/app/services/products.service.js` +
+  `backend/app/controllers/products.controller.js` — `listProductCategories`
+  (categorias distintas do catálogo, alimenta o filtro).
+- Rotas em `main.js`: `GET /nps/responses`, `GET /nps/responses/export`,
+  `GET /products/categories` — todas `requireAuth` sem `requireAdmin`
+  (leitura liberada aos dois perfis, FSD 22.6).
+- `frontend/src/views/NPS/NPS.jsx` (novo) — listagem com filtros (faixa,
+  período, vendedor, categoria), paginação, exportar CSV.
+- Rota `/nps` + item "Gestão de NPS" no menu (sem `adminOnly`) + prefixo
+  `/nps` no proxy do Vite.
+- **Bug real encontrado e corrigido durante o teste manual:** o botão
+  "Exportar CSV" inicialmente usava `window.open()`, que faz uma navegação
+  de página inteira (manda `Accept: text/html`) — o `bypassHtmlNavigation`
+  do proxy do Vite (criado na Fase 7 pra rotas de tela como `/templates`)
+  intercepta QUALQUER requisição assim pra um prefixo de API e serve o
+  `index.html` do React em vez de proxiar pro backend, então o CSV nunca
+  chegava a ser baixado. Corrigido pra `fetch` + `blob` (não manda esse
+  Accept), que baixa o arquivo sem sofrer o bypass.
+
+### Testes realizados
+
+- `node -c` nos arquivos novos/alterados; `vite build` completo dentro do
+  container (sem erros); HMR sem erros nos logs do frontend.
+- Smoke tests: `/nps/responses`, `/nps/responses/export` e
+  `/products/categories` retornam 401 sem sessão.
+- Testes diretos do serviço contra o Postgres real (4 notas de teste
+  cobrindo as 3 faixas + uma pendente, vendedores e categorias reais):
+  listagem sem filtro traz as 4 e ordena `low_score_open` primeiro; filtro
+  por faixa (detractor/neutral/promoter) isola corretamente cada uma,
+  excluindo a pendente (score nulo); filtro por vendedor; filtro por
+  categoria (`product_categories` agregada corretamente); exportação sem
+  paginação traz o mesmo conjunto. Dados de teste removidos ao final.
+- Teste real de UI (extensão Chrome, sessão Admin autenticada): tela
+  carregando os 4 registros de teste corretamente (nota, datas, produto,
+  vendedor, status, linha da nota baixa destacada em vermelho e em
+  primeiro), filtro por faixa "Detrator" isolando a linha certa, exportação
+  CSV validada via `fetch` no console da página (200, CSV com cabeçalho e
+  conteúdo corretos, já filtrado). Estado vazio (sem registros) conferido
+  visualmente após a limpeza dos dados de teste.
+
+### Pendências desta parte (cobertas na Parte 3)
+
+- Nenhuma ação sobre a nota ainda (mensagem padronizada, desconto/voucher,
+  localizar vendedor, histórico de `nps_treatments`) — só leitura por
+  enquanto, mesmo para o Administrador.
 
 ## Fase 10 — Parte 1: Captura de resposta de NPS — 13/08/2026
 

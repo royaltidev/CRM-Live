@@ -29,6 +29,7 @@ const apiPrefixes = [
   '/campaigns',
   '/settings',
   '/inbox',
+  '/nps',
 ];
 
 // Alguns prefixos de API colidem com uma rota de tela do React Router com o

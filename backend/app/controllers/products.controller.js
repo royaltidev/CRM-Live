@@ -19,6 +19,18 @@ async function listProducts(req, res) {
   }
 }
 
+// GET /products/categories
+async function listCategories(req, res) {
+  try {
+    const categories = await productsService.listProductCategories();
+    res.json({ categories });
+  } catch (err) {
+    console.error('Erro ao listar categorias de produtos:', err.message);
+    res.status(500).json({ error: 'Erro ao carregar categorias de produtos.' });
+  }
+}
+
 module.exports = {
   listProducts,
+  listCategories,
 };

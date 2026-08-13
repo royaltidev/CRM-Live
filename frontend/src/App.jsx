@@ -26,6 +26,7 @@ import CrossSell from './views/CrossSell/CrossSell';
 import Campanhas from './views/Campanhas/Campanhas';
 import Configuracoes from './views/Configuracoes/Configuracoes';
 import CaixaEntrada from './views/CaixaEntrada/CaixaEntrada';
+import NPS from './views/NPS/NPS';
 
 // Componente que protege rotas autenticadas.
 function ProtectedRoute({ children }) {
@@ -111,6 +112,8 @@ function AppContent() {
         <Route path="/log-disparos" element={<LogDisparos />} />
 
         <Route path="/status-sincronizacao" element={<StatusSincronizacao />} />
+
+        <Route path="/nps" element={<NPS />} />
 
         {/* Exclusiva do Administrador (FSD seção 8.5 e 12.17) */}
         <Route

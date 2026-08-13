@@ -135,12 +135,39 @@ async function deactivateUser(userId) {
 // Lista todos os usuários (para gestão).
 async function listUsers() {
   const result = await crmPool.query(
-    `SELECT id, email, name, role, active, created_at, last_login_at
+    `SELECT id, email, name, role, active, whatsapp_phone, created_at, last_login_at
      FROM users
      ORDER BY created_at DESC`
   );
 
   return result.rows;
+}
+
+// Mesmo formato aceito pra sellers.whatsappPhone (ver sellers.service.js).
+const PHONE_REGEX = /^\+?[\d\s()-]{8,20}$/;
+
+// Atualiza o WhatsApp de contato de um usuário — hoje só usado pro
+// Administrador receber o alerta imediato de nota de NPS baixa (FSD
+// 6.8/12.12, Fase 10; ver nps.service.js). Não previsto no FSD original;
+// documentado em docs/STATUS.md, Fase 10.
+async function updateUserWhatsappPhone(userId, whatsappPhone) {
+  const trimmed = whatsappPhone && typeof whatsappPhone === 'string' ? whatsappPhone.trim() : null;
+
+  if (trimmed && !PHONE_REGEX.test(trimmed)) {
+    throw new Error('O número de WhatsApp informado é inválido. Use apenas dígitos, espaços, parênteses, hífen e "+".');
+  }
+
+  const result = await crmPool.query(
+    `UPDATE users SET whatsapp_phone = $1, updated_at = NOW() WHERE id = $2
+     RETURNING id, email, name, role, active, whatsapp_phone`,
+    [trimmed || null, userId]
+  );
+
+  if (result.rows.length === 0) {
+    throw new Error('Usuário não encontrado');
+  }
+
+  return result.rows[0];
 }
 
 module.exports = {
@@ -151,4 +178,5 @@ module.exports = {
   logSecurityEvent,
   deactivateUser,
   listUsers,
+  updateUserWhatsappPhone,
 };

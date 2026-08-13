@@ -16,6 +16,7 @@ async function listUsers(req, res) {
         name: u.name,
         role: u.role,
         active: u.active,
+        whatsappPhone: u.whatsapp_phone,
         createdAt: u.created_at,
         lastLoginAt: u.last_login_at,
       })),
@@ -72,7 +73,41 @@ async function deactivateUser(req, res) {
   }
 }
 
+// PATCH /users/:id/whatsapp-phone
+// WhatsApp de contato do usuário (hoje só usado pro alerta de nota de NPS
+// baixa ao Administrador — Fase 10, ver nps.service.js). Body: { whatsappPhone }.
+async function updateWhatsappPhone(req, res) {
+  try {
+    const { id } = req.params;
+    const { whatsappPhone } = req.body;
+
+    const updated = await authService.updateUserWhatsappPhone(id, whatsappPhone);
+
+    res.json({
+      user: {
+        id: updated.id,
+        email: updated.email,
+        name: updated.name,
+        role: updated.role,
+        active: updated.active,
+        whatsappPhone: updated.whatsapp_phone,
+      },
+    });
+  } catch (err) {
+    if (err.message === 'Usuário não encontrado') {
+      return res.status(404).json({ error: err.message });
+    }
+    if (err.message.startsWith('O número de WhatsApp')) {
+      return res.status(400).json({ error: err.message });
+    }
+
+    console.error('Erro ao atualizar WhatsApp do usuário:', err.message);
+    res.status(500).json({ error: 'Erro ao atualizar o WhatsApp do usuário.' });
+  }
+}
+
 module.exports = {
   listUsers,
   deactivateUser,
+  updateWhatsappPhone,
 };

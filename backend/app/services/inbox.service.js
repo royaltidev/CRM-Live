@@ -237,7 +237,7 @@ async function processInboundMessage({ from, body }) {
   let npsResponse = null;
 
   if (!optedOut) {
-    npsResponse = await npsService.captureNpsResponse({ customerId: customer.id, body });
+    npsResponse = await npsService.captureNpsResponse({ customerId: customer.id, customerName: customer.name, body });
 
     if (!npsResponse) {
       consentGate = await resolveConsentGate({ customer, conversationId, body });

@@ -261,8 +261,8 @@ Decisões técnicas tomadas durante a preparação do terreno (07/08/2026), para
 
 **Checklist:**
 - [x] Registro de resposta de NPS (`nps_responses`) — Parte 1, 13/08/2026.
-- [ ] Alerta imediato ao Administrador para nota ≤ limite configurável (padrão 6) — dado gravado na Parte 1 (`status = 'low_score_open'`), falta o destaque visual na tela de gestão (Parte 2).
-- [ ] Tela de gestão de NPS (agrupado por faixa, filtros por período/vendedor/categoria).
+- [x] Alerta imediato ao Administrador para nota ≤ limite configurável (padrão 6) — dado gravado na Parte 1 (`status = 'low_score_open'`), destaque visual na tela de gestão desde a Parte 2, e alerta proativo por WhatsApp (opcional, `users.whatsapp_phone`) desde a extensão de 13/08/2026.
+- [x] Tela de gestão de NPS (agrupado por faixa, filtros por período/vendedor/categoria) — Parte 2, 13/08/2026.
 - [ ] Ações sobre nota: enviar mensagem padronizada, oferecer desconto/voucher, localizar vendedor responsável.
 - [ ] Histórico de tratamento (`nps_treatments`), estrutura extensível para novas ações futuras.
 

@@ -42,6 +42,17 @@ async function listProducts({ search = null, active = null } = {}) {
   return result.rows.map(mapProduct);
 }
 
+// Categorias distintas em uso no catálogo — alimenta o filtro de categoria
+// da tela de gestão de NPS (FSD 12.12, Fase 10 Parte 2).
+async function listProductCategories() {
+  const result = await crmPool.query(
+    `SELECT DISTINCT category FROM products WHERE category IS NOT NULL AND category != '' ORDER BY category ASC`
+  );
+
+  return result.rows.map((row) => row.category);
+}
+
 module.exports = {
   listProducts,
+  listProductCategories,
 };

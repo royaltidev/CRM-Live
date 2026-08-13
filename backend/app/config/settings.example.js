@@ -70,6 +70,21 @@ module.exports = {
     sessionStoragePath: './app/storage/whatsapp-session',
   },
 
+  // Integração com IA para classificação de intenção de lead na caixa de
+  // entrada (Fase 9 — ver backend/app/integrations/ai). A chave de API é um
+  // segredo de implantação (fica aqui, nunca versionada); já o LIGA/DESLIGA
+  // dessa classificação por IA (e as palavras-chave usadas quando desligada)
+  // é parâmetro de negócio, editado pelo Administrador na tela de
+  // Configurações — não fica neste arquivo (ver system_settings, chaves
+  // ai_deepseek_enabled e lead_intent_keywords).
+  ai: {
+    provider: 'deepseek',
+    deepseek: {
+      apiKey: 'CHANGE_ME',
+      model: 'deepseek-chat',
+    },
+  },
+
   // Parâmetros TÉCNICOS da sincronização com o Uniplus (Fase 4) — não são
   // configuração de negócio (essas ficam em system_settings, ver FSD seção 20).
   // Ver docs/uniplus-schema/05-mapeamento-sincronizacao.md, § "Parâmetros técnicos".

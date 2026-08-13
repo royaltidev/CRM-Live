@@ -150,6 +150,31 @@ async function getNextInRotation() {
   return mapSeller(row);
 }
 
+// Designa o próximo vendedor da fila de rodízio E avança a fila
+// (rotation_last_assigned_at = NOW()) — usado pela caixa de entrada (Fase 9)
+// ao encaminhar um lead sem vendedor de última venda. Mesmo critério de
+// getNextInRotation (mais antigo primeiro, NULL primeiro), mas numa única
+// query atômica (FOR UPDATE SKIP LOCKED) pra dois leads chegando ao mesmo
+// tempo não caírem no mesmo vendedor. Retorna null se não houver vendedor
+// ativo (fila vazia).
+async function assignRotation() {
+  const result = await queryAsync(
+    `WITH next_seller AS (
+       SELECT id FROM sellers
+       WHERE active = true
+       ORDER BY rotation_last_assigned_at ASC NULLS FIRST
+       LIMIT 1
+       FOR UPDATE SKIP LOCKED
+     )
+     UPDATE sellers
+     SET rotation_last_assigned_at = NOW(), updated_at = NOW()
+     WHERE id = (SELECT id FROM next_seller)
+     RETURNING *`
+  );
+
+  return result.rows.length === 0 ? null : mapSeller(result.rows[0]);
+}
+
 module.exports = {
   listSellers,
   getSellerById,
@@ -157,4 +182,5 @@ module.exports = {
   updateSeller,
   toggleSellerActive,
   getNextInRotation,
+  assignRotation,
 };

@@ -27,6 +27,9 @@ const giftbackController = require('./controllers/giftback.controller');
 const productsController = require('./controllers/products.controller');
 const complementaryProductsController = require('./controllers/complementary-products.controller');
 const campaignsController = require('./controllers/campaigns.controller');
+const settingsController = require('./controllers/settings.controller');
+const inboxController = require('./controllers/inbox.controller');
+const inboxService = require('./services/inbox.service');
 const { requireAuth, requireAdmin } = require('./middleware/auth.middleware');
 const whatsapp = require('./integrations/whatsapp');
 const { startMessageQueueJob } = require('./jobs/message-queue.job');
@@ -197,6 +200,27 @@ app.delete('/campaigns/:id', requireAuth, campaignsController.deleteCampaign);
 app.post('/campaigns/:id/cancel', requireAuth, campaignsController.cancelCampaign);
 app.post('/campaigns/:id/send', requireAuth, campaignsController.sendCampaignNow);
 
+// ===== Rotas de Caixa de Entrada (FSD 12.10, 13.7 — exclusivas do Admin) =====
+
+app.get('/inbox/conversations', requireAuth, requireAdmin, inboxController.listConversations);
+app.get('/inbox/conversations/:id', requireAuth, requireAdmin, inboxController.getConversationById);
+app.post('/inbox/conversations/:id/reply', requireAuth, requireAdmin, inboxController.sendManualReply);
+
+// ===== Rotas de Configurações (FSD 12.13 — exclusivas do Admin) =====
+
+app.get(
+  '/settings/lead-intent-classification',
+  requireAuth,
+  requireAdmin,
+  settingsController.getLeadIntentClassificationSettings
+);
+app.put(
+  '/settings/lead-intent-classification',
+  requireAuth,
+  requireAdmin,
+  settingsController.updateLeadIntentClassificationSettings
+);
+
 // ===== Tratamento de Erros Genérico =====
 
 app.use((err, req, res, next) => {
@@ -219,6 +243,18 @@ app.listen(settings.port, () => {
   // ver backend/app/integrations/whatsapp/providers/whatsapp-web-provider.js.
   // No primeiro pareamento (ou se a sessão local for invalidada), o QR Code
   // é impresso neste console e precisa ser escaneado manualmente.
+  //
+  // Caixa de entrada (Fase 9, FSD 13.7): toda mensagem recebida (exceto de
+  // grupo e as enviadas pela própria loja — já filtradas no provider) passa
+  // por processInboundMessage. Registrado ANTES de initialize() para nunca
+  // perder um evento, e com .catch() próprio porque o try/catch do provider
+  // só cobre erro síncrono, não a Promise retornada pelo callback.
+  whatsapp.onMessageReceived(({ from, body }) => {
+    inboxService.processInboundMessage({ from, body }).catch((err) => {
+      console.error('[inbox] Erro ao processar mensagem recebida:', err.message);
+    });
+  });
+
   whatsapp.initialize();
 
   // Inicia o processamento periódico da fila de envio de mensagens

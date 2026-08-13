@@ -39,7 +39,16 @@ async function touchConversation(conversationId) {
   ]);
 }
 
+// Altera o status da conversa (ciclo completo da Fase 9: automated ->
+// awaiting_human -> answered -> closed). Usado pela caixa de entrada ao
+// receber uma resposta do cliente (awaiting_human) e ao responder
+// manualmente (answered).
+async function setConversationStatus(conversationId, status) {
+  await crmPool.query('UPDATE conversations SET status = $1 WHERE id = $2', [status, conversationId]);
+}
+
 module.exports = {
   getOrCreateConversationForCustomer,
   touchConversation,
+  setConversationStatus,
 };

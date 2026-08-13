@@ -235,13 +235,14 @@ Decisões técnicas tomadas durante a preparação do terreno (07/08/2026), para
 **Objetivo:** implementar o módulo 6.5 — caixa de entrada, interrupção de automações e roteamento de leads.
 
 **Checklist:**
-- [ ] Caixa de entrada (lista de conversas, priorizando aguardando atendimento) — exclusiva do Administrador.
-- [ ] Resposta manual ao cliente pelo CRM Live.
-- [ ] Interrupção automática de automações em curso ao detectar resposta do cliente.
-- [ ] Detecção de intenção de compra/dúvida para acionar encaminhamento.
-- [ ] Roteamento: vendedor da última venda (via Uniplus) ou próximo da fila de rodízio.
-- [ ] Avanço da fila de rodízio apenas quando efetivamente usada.
-- [ ] Envio de notificação ao vendedor via WhatsApp (camada de mensageria).
+- [x] Caixa de entrada (lista de conversas, priorizando aguardando atendimento) — exclusiva do Administrador.
+- [x] Resposta manual ao cliente pelo CRM Live.
+- [x] Interrupção automática de automações em curso ao detectar resposta do cliente.
+- [x] Detecção de intenção de compra/dúvida para acionar encaminhamento — via IA (DeepSeek), com fallback por palavra-chave configurável (flag `ai_deepseek_enabled` + `lead_intent_keywords`, tela de Configurações) e fail-open em caso de falha dupla. Decisão registrada em `docs/STATUS.md`.
+- [x] Roteamento: vendedor da última venda (via Uniplus) ou próximo da fila de rodízio.
+- [x] Avanço da fila de rodízio apenas quando efetivamente usada.
+- [x] Envio de notificação ao vendedor via WhatsApp (camada de mensageria).
+- [x] **Adicional (pedido do responsável, 13/08/2026):** captura real de consentimento (opt-in) na primeira mensagem de um cliente, antes de qualquer classificação — nenhum fluxo de opt-in existia até esta fase. Ver `docs/STATUS.md` para o que ainda fica de fora (opt-in para o primeiro disparo automático de um cliente que nunca respondeu).
 
 **Critérios de pronto:**
 - Toda resposta de cliente interrompe automações antes de qualquer outra ação.

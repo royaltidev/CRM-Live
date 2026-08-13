@@ -36,6 +36,10 @@ const connectionState = {
 // Callbacks registrados via onSessionDown(), chamados quando a sessão cair.
 const sessionDownCallbacks = [];
 
+// Callbacks registrados via onMessageReceived(), chamados a cada mensagem
+// recebida (Fase 9 — caixa de entrada).
+const messageReceivedCallbacks = [];
+
 function updateConnectionState(connected) {
   connectionState.connected = connected;
   connectionState.lastEventAt = new Date();
@@ -88,6 +92,33 @@ async function initialize() {
         updateConnectionState(false);
       });
 
+      // Emitido pela lib apenas para mensagens genuinamente recebidas
+      // (fromMe=false já é filtrado internamente pela lib antes de emitir
+      // este evento — ver node_modules/whatsapp-web.js/src/Client.js). Não
+      // usamos "message_create", que dispararia também para mensagens
+      // enviadas pela própria loja.
+      client.on('message', (msg) => {
+        try {
+          // Ignora mensagens de grupo — a caixa de entrada (Fase 9) só trata
+          // conversas 1:1 com clientes.
+          if (String(msg.from).endsWith('@g.us')) {
+            return;
+          }
+
+          const phoneE164 = toE164(msg.from);
+
+          messageReceivedCallbacks.forEach((callback) => {
+            try {
+              callback({ from: phoneE164, body: msg.body || '', timestamp: new Date() });
+            } catch (callbackErr) {
+              console.error('[whatsapp] Erro em callback de onMessageReceived:', callbackErr.message);
+            }
+          });
+        } catch (err) {
+          console.error('[whatsapp] Erro ao processar mensagem recebida:', err.message);
+        }
+      });
+
       client.on('disconnected', (reason) => {
         console.error('[whatsapp] Sessão desconectada:', reason);
         updateConnectionState(false);
@@ -120,9 +151,17 @@ async function initialize() {
 // Envia uma mensagem de texto. `to` deve ser um telefone em formato E.164
 // (ex.: +5511999999999) — a conversão para o formato esperado pela lib
 // (<numero>@c.us) é feita aqui, internamente ao provider.
+//
+// Checa `connectionState.connected` (evento 'ready'), NÃO `initialized`:
+// `client.initialize()` resolve assim que o navegador/página sobem, antes
+// de qualquer pareamento — com sessão aguardando QR Code, `initialized` já
+// é true mas o cliente ainda não consegue enviar nada. Usar só `initialized`
+// aqui deixava o guard passar e a chamada seguinte (resolveChatId ->
+// getNumberId) travava indefinidamente, sem erro nem timeout (encontrado
+// testando a Fase 9 com a sessão local ainda não pareada).
 async function sendText({ to, body }) {
-  if (!client || !initialized) {
-    throw new Error('Cliente do WhatsApp Web não está inicializado.');
+  if (!client || !connectionState.connected) {
+    throw new Error('Sessão do WhatsApp Web não está conectada.');
   }
 
   const chatId = await resolveChatId(to);
@@ -138,8 +177,8 @@ async function sendText({ to, body }) {
 // backend/app/storage/attachments/, fora de qualquer rota pública — nunca
 // uma URL remota). Usa MessageMedia.fromFilePath, não fromUrl.
 async function sendImage({ to, imagePath, caption }) {
-  if (!client || !initialized) {
-    throw new Error('Cliente do WhatsApp Web não está inicializado.');
+  if (!client || !connectionState.connected) {
+    throw new Error('Sessão do WhatsApp Web não está conectada.');
   }
 
   const { MessageMedia } = require('whatsapp-web.js');
@@ -157,6 +196,14 @@ function formatChatId(phoneE164) {
   // esperado pelo formato "<numero>@c.us" da biblioteca.
   const digitsOnly = String(phoneE164).replace(/\D/g, '');
   return `${digitsOnly}@c.us`;
+}
+
+// Caminho inverso de formatChatId: converte um chat id da lib
+// ("<numero>@c.us") para o formato E.164 usado internamente pelo CRM
+// (customers.phone_e164, mesmo formato aceito por sendText/sendImage).
+function toE164(chatId) {
+  const digitsOnly = String(chatId).split('@')[0];
+  return `+${digitsOnly}`;
 }
 
 // Resolve o id real do WhatsApp (WID/LID) para o número antes de enviar.
@@ -182,7 +229,9 @@ async function resolveChatId(phoneE164) {
 // `formatChatId` normalmente. Retorna `null` internamente na lib quando o
 // número não tem conta WhatsApp.
 async function checkNumberStatus(phoneE164) {
-  if (!client || !initialized) {
+  // Mesmo cuidado de sendText/sendImage: `connectionState.connected`, não
+  // `initialized` (ver comentário em sendText).
+  if (!client || !connectionState.connected) {
     throw new Error('whatsapp_not_connected');
   }
 
@@ -211,11 +260,22 @@ function onSessionDown(callback) {
   }
 }
 
+// Registra um callback a ser chamado a cada mensagem recebida (evento
+// "message" da biblioteca, já filtrado para excluir mensagens da própria
+// loja e mensagens de grupo). Callback recebe { from, body, timestamp } —
+// `from` sempre em E.164, mesmo formato usado por sendText/sendImage.
+function onMessageReceived(callback) {
+  if (typeof callback === 'function') {
+    messageReceivedCallbacks.push(callback);
+  }
+}
+
 module.exports = {
   initialize,
   sendText,
   sendImage,
   getConnectionStatus,
   onSessionDown,
+  onMessageReceived,
   checkNumberStatus,
 };

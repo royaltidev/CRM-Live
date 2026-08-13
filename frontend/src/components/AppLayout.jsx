@@ -21,6 +21,8 @@ import LocalOfferIcon from '@mui/icons-material/LocalOfferOutlined';
 import DonutSmallIcon from '@mui/icons-material/DonutSmallOutlined';
 import StorefrontIcon from '@mui/icons-material/StorefrontOutlined';
 import ManageAccountsIcon from '@mui/icons-material/ManageAccountsOutlined';
+import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
+import InboxOutlinedIcon from '@mui/icons-material/InboxOutlined';
 import LogoutIcon from '@mui/icons-material/LogoutOutlined';
 import GppGoodIcon from '@mui/icons-material/GppGoodOutlined';
 import ForumIcon from '@mui/icons-material/ForumOutlined';
@@ -39,6 +41,7 @@ const DRAWER_WIDTH = 260;
 // conforme a matriz de permissões do FSD (seção 8.5).
 const MENU_ITEMS = [
   { label: 'Dashboard', path: '/dashboard', icon: DashboardIcon },
+  { label: 'Caixa de Entrada', path: '/caixa-entrada', icon: InboxOutlinedIcon, adminOnly: true },
   { label: 'Clientes', path: '/clientes', icon: PeopleIcon },
   { label: 'Segmentação', path: '/segmentacao', icon: DonutSmallIcon },
   { label: 'Vendedores', path: '/vendedores', icon: StorefrontIcon },
@@ -53,6 +56,7 @@ const MENU_ITEMS = [
   { label: 'Campanhas', path: '/campanhas', icon: SendOutlinedIcon },
   { label: 'Sincronização Uniplus', path: '/status-sincronizacao', icon: SyncOutlinedIcon },
   { label: 'Gestão de Usuários', path: '/users', icon: ManageAccountsIcon, adminOnly: true },
+  { label: 'Configurações', path: '/configuracoes', icon: SettingsOutlinedIcon, adminOnly: true },
 ];
 
 // Layout compartilhado por todas as telas autenticadas: menu lateral fixo +
@@ -189,7 +193,6 @@ export default function AppLayout() {
         component="main"
         sx={{
           flexGrow: 1,
-          marginLeft: `${DRAWER_WIDTH}px`,
           marginTop: '64px', // altura do AppBar
           padding: 0,
           minHeight: 'calc(100vh - 64px)',

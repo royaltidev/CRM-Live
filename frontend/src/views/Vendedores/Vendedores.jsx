@@ -217,7 +217,7 @@ export default function Vendedores() {
   }
 
   return (
-    <Container maxWidth="lg" sx={{ paddingY: 4 }}>
+    <Container maxWidth={false} sx={{ paddingY: 4, paddingX: 4 }}>
       {/* Header */}
       <Box sx={{ marginBottom: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 2 }}>
         <Box>

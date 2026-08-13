@@ -116,7 +116,7 @@ export default function Users() {
   }
 
   return (
-    <Container maxWidth="lg" sx={{ paddingY: 4 }}>
+    <Container maxWidth={false} sx={{ paddingY: 4, paddingX: 4 }}>
       {/* Header */}
       <Box sx={{ marginBottom: 3 }}>
         <Typography variant="h3" sx={{ marginBottom: 1 }}>

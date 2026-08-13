@@ -1,7 +1,164 @@
 # Status do Projeto — CRM Live
 
-**Última atualização:** 12/08/2026
-**Atualizado por:** Fase 8 — Parte 5 (Campanhas) implementada e testada, Fase 8 concluída; Parte 4 (Cross-sell) implementada e testada; Parte 1 (Templates) implementada e testada; validação da Fase 7 em ambiente real
+**Última atualização:** 13/08/2026
+**Atualizado por:** Fase 9 (Caixa de entrada, atendimento e encaminhamento de lead) implementada e testada, Fase 9 concluída; Fase 8 — Parte 5 (Campanhas) implementada e testada, Fase 8 concluída; Parte 4 (Cross-sell) implementada e testada; Parte 1 (Templates) implementada e testada; validação da Fase 7 em ambiente real
+
+## Fase 9 — Caixa de entrada, atendimento e encaminhamento de lead — 13/08/2026
+
+**Objetivo (FSD seções 6.5, 12.10, 13.7):** centralizar as respostas dos
+clientes numa caixa de entrada única, interromper automações quando o
+cliente responde, classificar a resposta (intenção de compra / dúvida) e
+encaminhar o lead ao vendedor certo — última venda ou fila de rodízio.
+
+### Decisões de design (ambiguidades do FSD resolvidas com o responsável do projeto)
+
+- **Critério de "demonstra intenção de compra ou dúvida":** o FSD não define
+  nenhum critério objetivo. Decisão: usar uma IA (DeepSeek) pra classificar
+  a mensagem recebida em `purchase_intent | doubt | none`, em vez de uma
+  lista de palavras-chave fixa no código.
+- **Camada de abstração de IA** (`backend/app/integrations/ai/`, mesmo
+  padrão arquitetural da mensageria): nenhum outro módulo importa o SDK/API
+  do DeepSeek diretamente, tudo passa por `classifyLeadIntent({ messageBody
+  })`. `ai.provider` em `settings.js` decide o provedor (só `deepseek` por
+  enquanto).
+- **Flag de ativação + fallback por palavra-chave (pedido do responsável,
+  13/08):** o Administrador pode desativar a IA na tela de Configurações
+  (`ai_deepseek_enabled`, default ativado) — quando desativada, a
+  classificação usa exclusivamente as palavras-chave configuradas na mesma
+  tela (`lead_intent_keywords`, sem valor padrão). Mesmo com a IA ativada,
+  uma falha da chamada (rede, timeout, sem crédito etc.) cai automaticamente
+  pra classificação por palavra-chave antes de desistir; se nem isso
+  classificar, assume `purchase_intent` por segurança (fail-open — nunca
+  perder um lead real por falha técnica). Ver
+  `backend/app/services/lead-intent.service.js`.
+- **Captura real de consentimento (pedido do responsável, 13/08):** não
+  existia NENHUM fluxo real de opt-in no sistema até aqui (só o serviço,
+  sem consumidor — `consent.service.js#optIn` nunca era chamado). Resolvido
+  para a caixa de entrada: na primeira mensagem de um cliente (nenhuma linha
+  em `consents` ainda), o sistema pergunta "Aceita receber novas mensagens
+  nesta conversa?" e PARA — nada é mandado pro DeepSeek antes disso. A
+  próxima mensagem é interpretada como resposta (palavra-chave simples,
+  nunca IA: sim/aceito/quero/pode/claro/ok/certo/concordo → opt-in; não/n/
+  negativo/nunca → opt-out; qualquer outra coisa fica pendente, pergunta não
+  se repete). Isso resolve a captura de consentimento SÓ para quem inicia
+  contato respondendo uma mensagem — capturar consentimento para o primeiro
+  disparo automático (ex.: agradecimento pós-venda a um cliente que nunca
+  respondeu nada) continua em aberto, fora do escopo desta parte.
+- **Saudação por horário (pedido do responsável, 13/08):** troca de um "Olá"
+  fixo nos templates por `{{saudacao}}`, variável sempre disponível em
+  `rules-engine.service.js#renderTemplate` (Bom dia/Boa tarde/Boa noite,
+  calculado no horário de Brasília explicitamente — o container roda em
+  UTC). Template demo de agradecimento pós-venda atualizado para usá-la.
+- **"Interrompe automação em andamento" (13.7, passo 2):** o FSD usa
+  "automação" especificamente pra réguas de relacionamento — só mensagens
+  `queued` com `trigger_source='automation'` são canceladas ao receber uma
+  resposta (novo status `canceled` em `message_status`, migration 036;
+  reaproveitar `failed` confundiria com falha real de envio no Log de
+  Disparos). Campanhas manuais não são tocadas.
+- **Vendedor da última venda:** só conta quando `sales.seller_id` não é
+  nulo; sem venda anterior (ou sem vendedor vinculado), cai pra fila de
+  rodízio — leitura literal do FSD, sem inventar fallback pra vendedor
+  inativo.
+- **Notificação ao vendedor:** alerta operacional interno, enviado via
+  `whatsapp.sendText` diretamente (fora da fila de envio) — a fila existe
+  pra proteger CLIENTES de spam (consentimento/cadência/janela), regras que
+  não fazem sentido pra um aviso pontual a um vendedor da própria loja.
+- **Resposta manual do Administrador:** enviada IMEDIATAMENTE (fora da fila,
+  sem cadência/janela — faz sentido só pra disparo automático em volume),
+  mas consentimento continua checado (`isCustomerEligibleForMessage`,
+  contrato de `consent.service.js`, FSD 6.6 é categórico: "automática ou
+  manual").
+
+### Implementação
+
+- `backend/app/database/migrations/036_add_canceled_message_status.js` —
+  novo valor `canceled` em `message_status`.
+- `backend/app/integrations/ai/index.js`, `.../providers/deepseek-provider.js`
+  — camada de abstração de IA + provedor DeepSeek (HTTP `fetch` nativo,
+  compatível com OpenAI Chat Completions, JSON mode, timeout 10s).
+- `backend/app/services/lead-intent.service.js` — orquestra IA vs.
+  palavra-chave, com fallback em cascata (ver decisões acima).
+- `backend/app/services/automation-settings.service.js` — novas chaves
+  `ai_deepseek_enabled`/`getAiDeepseekEnabled`/`setAiDeepseekEnabled` e
+  `lead_intent_keywords`/`getLeadIntentKeywords`/`setLeadIntentKeywords`.
+- `backend/app/controllers/settings.controller.js` (novo) + rotas
+  `GET/PUT /settings/lead-intent-classification` (Admin-exclusivo) — tela de
+  Configurações (FSD 12.13), primeira vez que essa tela existe no sistema.
+- `frontend/src/views/Configuracoes/Configuracoes.jsx` (novo) — toggle IA +
+  chips de palavras-chave (intenção de compra / dúvida).
+- `backend/app/integrations/whatsapp/providers/whatsapp-web-provider.js` —
+  `client.on('message', ...)` + `onMessageReceived(callback)` (ignora
+  mensagens de grupo e as enviadas pela própria loja, já filtradas pela lib
+  antes do evento `message`). **Bug real encontrado e corrigido nesta
+  parte:** `sendText`/`sendImage`/`checkNumberStatus` checavam `initialized`
+  (true assim que o navegador sobe) em vez de `connectionState.connected`
+  (true só após o evento `ready`) — com sessão aguardando QR Code, uma
+  chamada de envio passava pelo guard e travava indefinidamente em
+  `client.getNumberId` (sem erro, sem timeout). Corrigido pra checar
+  `connected` nos três lugares — agora falha rápido e com mensagem clara.
+- `backend/app/services/customers.service.js` — `getCustomerByPhone`.
+- `backend/app/services/sellers.service.js` — `assignRotation` (designa E
+  avança a fila numa query atômica `FOR UPDATE SKIP LOCKED`, pra dois leads
+  simultâneos não caírem no mesmo vendedor).
+- `backend/app/services/conversations.service.js` — `setConversationStatus`.
+- `backend/app/services/consent.service.js` — `markConsentRequested`
+  (função nova, aditiva — não altera o contrato público protegido
+  `isCustomerEligibleForMessage`/`processInboundOptOutKeyword`).
+- `backend/app/services/rules-engine.service.js` — variável `{{saudacao}}`
+  automática em `renderTemplate`.
+- `backend/app/services/inbox.service.js` (novo) — `processInboundMessage`
+  (fluxo completo: opt-out → interrompe automação → loga mensagem → marca
+  `awaiting_human` → gate de consentimento → classificação → encaminhamento),
+  `sendManualReply`, `listConversations`, `getConversationById`,
+  `getConversationMessages`.
+- `backend/app/controllers/inbox.controller.js` (novo) + rotas
+  `GET /inbox/conversations`, `GET /inbox/conversations/:id`,
+  `POST /inbox/conversations/:id/reply` (Admin-exclusivo).
+- `backend/app/main.js` — `whatsapp.onMessageReceived(...)` conectado no
+  boot, com `.catch()` próprio (o try/catch do provider só cobre erro
+  síncrono, não a Promise do callback).
+- `frontend/src/views/CaixaEntrada/CaixaEntrada.jsx` (novo) — lista de
+  conversas (prioriza aguardando atendimento) + thread + resposta manual,
+  rota `/caixa-entrada` e item de menu exclusivos do Administrador.
+
+### Testes realizados
+
+- `node -c` em todos os arquivos novos/alterados.
+- Testes diretos contra o Postgres real (via `docker compose exec backend
+  node -e`), com `whatsapp.sendText` mockado quando necessário pra nunca
+  disparar mensagem real: `classifyLeadIntent` (IA real com chave do
+  DeepSeek configurada pelo responsável, + fallback por palavra-chave, +
+  fail-open), `assignRotation` (avança e cicla entre 3 vendedores reais,
+  revertido depois), `processInboundMessage` (intenção de compra →
+  rodízio; régua em andamento cancelada; venda anterior → último vendedor;
+  opt-out não classifica; número desconhecido; gate de consentimento nos 5
+  estados: primeiro contato, resposta ambígua, "sim", já consentido,
+  "não"), `sendManualReply` (bloqueio sem consentimento, envio com
+  consentimento, status da conversa muda pra `answered`).
+- Teste real de UI (extensão Chrome, sessão autenticada): tela de
+  Configurações (toggle + chips, salva e persiste após F5) e tela de Caixa
+  de Entrada (lista, abre conversa, thread renderiza mensagens reais,
+  bloqueio por falta de consentimento aparece corretamente, falha de envio
+  real — sessão do WhatsApp ainda não pareada neste ambiente — aparece
+  rápido e com mensagem clara após a correção do bug de `connected`).
+- Todo dado de teste (clientes, vendedores, mensagens, consents,
+  conversations, system_settings, e o `rotation_last_assigned_at` de
+  vendedores reais tocado incidentalmente por testes de rodízio) foi
+  limpo/revertido ao final de cada rodada.
+
+### Pendências conhecidas (fora do escopo desta parte)
+
+- Sessão do WhatsApp Web deste ambiente ainda não está pareada (aguardando
+  QR Code) — nenhum envio real foi testado de ponta a ponta, só o caminho de
+  falha (agora rápido, graças à correção do bug de `connected`).
+- Captura de consentimento só cobre quem RESPONDE uma mensagem. Não resolve
+  como conseguir opt-in pro primeiro disparo automático (ex.: agradecimento
+  pós-venda) de um cliente que nunca escreveu nada — segue em aberto.
+- `campaign_attribution_days`, `welcome_coupon_discount_percent` e outros
+  parâmetros globais (FSD 20) continuam só leitura via SQL — a tela de
+  Configurações agora existe (nova nesta Fase), mas só tem o campo de
+  classificação de intenção; os demais parâmetros globais não foram
+  migrados pra lá.
 
 ## Fase 8 — Parte 1: CRUD de Modelos de Mensagem (Templates) — 12/08/2026
 

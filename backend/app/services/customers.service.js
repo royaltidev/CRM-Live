@@ -194,6 +194,15 @@ async function removeTagFromCustomer(customerId, tagId) {
   return true;
 }
 
+// Busca um cliente pelo telefone exato (E.164) — usado pela caixa de
+// entrada (Fase 9) para identificar o cliente ao receber uma mensagem do
+// WhatsApp. Retorna null se não houver cliente cadastrado com esse telefone
+// (ex.: número desconhecido, ainda não sincronizado do Uniplus).
+async function getCustomerByPhone(phoneE164) {
+  const result = await crmPool.query('SELECT * FROM customers WHERE phone_e164 = $1', [phoneE164]);
+  return result.rows.length === 0 ? null : result.rows[0];
+}
+
 // Relatório: vendas sem cliente identificado (customer_id IS NULL).
 // Útil para acompanhar vendas que precisam ser vinculadas manualmente ou
 // que indicam falha de match na sincronização.
@@ -236,6 +245,7 @@ async function getSalesWithoutCustomer({ startDate, endDate } = {}) {
 module.exports = {
   listCustomers,
   getCustomerById,
+  getCustomerByPhone,
   getCustomerTimeline,
   updateCustomerComplementaryFields,
   addTagToCustomer,

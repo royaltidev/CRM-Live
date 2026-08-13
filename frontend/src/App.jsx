@@ -24,6 +24,8 @@ import Cupons from './views/Cupons/Cupons';
 import Giftback from './views/Giftback/Giftback';
 import CrossSell from './views/CrossSell/CrossSell';
 import Campanhas from './views/Campanhas/Campanhas';
+import Configuracoes from './views/Configuracoes/Configuracoes';
+import CaixaEntrada from './views/CaixaEntrada/CaixaEntrada';
 
 // Componente que protege rotas autenticadas.
 function ProtectedRoute({ children }) {
@@ -116,6 +118,26 @@ function AppContent() {
           element={
             <AdminRoute>
               <Users />
+            </AdminRoute>
+          }
+        />
+
+        {/* Exclusiva do Administrador (FSD seção 12.13) */}
+        <Route
+          path="/configuracoes"
+          element={
+            <AdminRoute>
+              <Configuracoes />
+            </AdminRoute>
+          }
+        />
+
+        {/* Exclusiva do Administrador (FSD seções 6.5, 12.10) */}
+        <Route
+          path="/caixa-entrada"
+          element={
+            <AdminRoute>
+              <CaixaEntrada />
             </AdminRoute>
           }
         />

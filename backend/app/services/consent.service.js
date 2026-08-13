@@ -60,6 +60,21 @@ async function optOut(customerId, source) {
   return result.rows[0];
 }
 
+// Marca que a pergunta de consentimento (FSD 6.6, captura real prevista pra
+// Fase 9) já foi enviada ao cliente, sem decidir nada ainda — cria a linha
+// em `consents` com opted_in=false E opted_out=false (estado "pendente de
+// resposta"), SE ainda não existir nenhuma linha. Não sobrescreve um estado
+// já decidido (ON CONFLICT DO NOTHING): se o cliente já respondeu antes,
+// nunca se pergunta de novo.
+async function markConsentRequested(customerId) {
+  await crmPool.query(
+    `INSERT INTO consents (customer_id, opted_in, opted_out)
+     VALUES ($1, false, false)
+     ON CONFLICT (customer_id) DO NOTHING`,
+    [customerId]
+  );
+}
+
 // Função crítica consumida pela fila de envio antes de cada disparo.
 // Retorna `true` SOMENTE SE existir registro em `consents` com
 // opted_in = true E opted_out = false. Qualquer outro caso retorna `false`.
@@ -100,6 +115,7 @@ module.exports = {
   getConsent,
   optIn,
   optOut,
+  markConsentRequested,
   isCustomerEligibleForMessage,
   processInboundOptOutKeyword,
 };

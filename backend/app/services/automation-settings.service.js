@@ -14,6 +14,8 @@ const KEYS = {
   WELCOME_COUPON_DISCOUNT_PERCENT: 'welcome_coupon_discount_percent',
   CROSS_SELL_DISCOUNT_PERCENT: 'cross_sell_discount_percent',
   CAMPAIGN_ATTRIBUTION_DAYS: 'campaign_attribution_days',
+  AI_DEEPSEEK_ENABLED: 'ai_deepseek_enabled',
+  LEAD_INTENT_KEYWORDS: 'lead_intent_keywords',
 };
 
 async function getSettingValue(key) {
@@ -92,6 +94,73 @@ async function getCampaignAttributionDays() {
   return value && Number.isFinite(value.days) ? value.days : null;
 }
 
+// Ativa/desativa a classificação de intenção de lead (caixa de entrada,
+// Fase 9) via API do DeepSeek (backend/app/integrations/ai). Editável na
+// tela de Configurações (FSD 12.13). TEM valor padrão (ativada): diferente
+// dos parâmetros acima, aqui não existe um estado "pendente" razoável — a
+// escolha do responsável do projeto foi usar IA por padrão, e desativar é
+// uma decisão explícita do Administrador, não o estado inicial.
+async function getAiDeepseekEnabled() {
+  const value = await getSettingValue(KEYS.AI_DEEPSEEK_ENABLED);
+  return value && typeof value.enabled === 'boolean' ? value.enabled : true;
+}
+
+async function setAiDeepseekEnabled(enabled, updatedBy) {
+  if (typeof enabled !== 'boolean') {
+    throw new Error('O valor de ativação da IA DeepSeek deve ser verdadeiro ou falso.');
+  }
+
+  await upsertSettingValue(
+    KEYS.AI_DEEPSEEK_ENABLED,
+    { enabled },
+    'Ativa/desativa a classificação de intenção de lead via API do DeepSeek na caixa de entrada (Fase 9).',
+    updatedBy
+  );
+
+  return enabled;
+}
+
+// Palavras-chave usadas para classificar a intenção de uma mensagem
+// recebida quando a IA DeepSeek está desativada (ver lead-intent.service.js).
+// NÃO tem valor padrão: enquanto vazias, nenhuma mensagem é classificada por
+// palavra-chave (fica 'none') — o Administrador precisa defini-las
+// explicitamente na tela de Configurações.
+async function getLeadIntentKeywords() {
+  const value = await getSettingValue(KEYS.LEAD_INTENT_KEYWORDS);
+  return {
+    purchaseIntent: value && Array.isArray(value.purchaseIntent) ? value.purchaseIntent : [],
+    doubt: value && Array.isArray(value.doubt) ? value.doubt : [],
+  };
+}
+
+function normalizeKeywordList(list, label) {
+  if (!Array.isArray(list)) {
+    throw new Error(`A lista de palavras-chave de "${label}" deve ser uma lista.`);
+  }
+
+  const cleaned = list
+    .map((word) => String(word).trim().toLowerCase())
+    .filter((word) => word.length > 0);
+
+  return Array.from(new Set(cleaned));
+}
+
+async function setLeadIntentKeywords({ purchaseIntent, doubt }, updatedBy) {
+  const keywords = {
+    purchaseIntent: normalizeKeywordList(purchaseIntent || [], 'intenção de compra'),
+    doubt: normalizeKeywordList(doubt || [], 'dúvida'),
+  };
+
+  await upsertSettingValue(
+    KEYS.LEAD_INTENT_KEYWORDS,
+    keywords,
+    'Palavras-chave usadas para classificar a intenção de mensagens recebidas quando a IA DeepSeek está desativada (Fase 9).',
+    updatedBy
+  );
+
+  return keywords;
+}
+
 module.exports = {
   KEYS,
   getNpsSurveyDelayMinutes,
@@ -100,4 +169,8 @@ module.exports = {
   getCrossSellDiscountPercent,
   setCrossSellDiscountPercent,
   getCampaignAttributionDays,
+  getAiDeepseekEnabled,
+  setAiDeepseekEnabled,
+  getLeadIntentKeywords,
+  setLeadIntentKeywords,
 };

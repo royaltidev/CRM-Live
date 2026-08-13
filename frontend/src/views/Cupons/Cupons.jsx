@@ -243,7 +243,7 @@ export default function Cupons() {
   };
 
   return (
-    <Container maxWidth="lg" sx={{ paddingY: 4 }}>
+    <Container maxWidth={false} sx={{ paddingY: 4, paddingX: 4 }}>
       <Box sx={{ marginBottom: 3 }}>
         <Typography variant="h3" sx={{ marginBottom: 1 }}>
           Cupons

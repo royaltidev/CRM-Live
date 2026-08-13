@@ -40,7 +40,7 @@ export default function Dashboard() {
   const { user } = useAuth();
 
   return (
-    <Container maxWidth="lg" sx={{ paddingY: 4 }}>
+    <Container maxWidth={false} sx={{ paddingY: 4, paddingX: 4 }}>
       <Box sx={{ marginBottom: 4 }}>
         <Typography variant="h3" sx={{ marginBottom: 1 }}>
           Bem-vindo, {user?.name || user?.email}!

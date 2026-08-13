@@ -20,12 +20,38 @@ const messageQueueService = require('./message-queue.service');
 const conversationsService = require('./conversations.service');
 const templatesService = require('./templates.service');
 
+// Saudação pelo horário do envio (pedido do responsável do projeto, em
+// substituição a um "Olá" fixo nos templates): 05h–11h59 "Bom dia", 12h–17h59
+// "Boa tarde", 18h–4h59 "Boa noite". Usa explicitamente o horário de
+// Brasília — o container roda em UTC (confirmado em
+// Intl.DateTimeFormat().resolvedOptions().timeZone), então `new
+// Date().getHours()` ficaria sistematicamente 3h errado.
+function greetingForCurrentTime() {
+  const hour = parseInt(
+    new Intl.DateTimeFormat('pt-BR', {
+      hour: 'numeric',
+      hour12: false,
+      timeZone: 'America/Sao_Paulo',
+    }).format(new Date()),
+    10
+  );
+
+  if (hour >= 5 && hour < 12) return 'Bom dia';
+  if (hour >= 12 && hour < 18) return 'Boa tarde';
+  return 'Boa noite';
+}
+
 // Substitui variáveis {{nome}} no corpo do template pelos valores em
 // `variables`. Variável sem valor correspondente é removida (string vazia)
 // em vez de deixar o placeholder literal na mensagem enviada ao cliente.
+// `{{saudacao}}` é sempre disponível automaticamente (não precisa ser
+// passada por quem chama) — mesma variável em TODOS os templates/réguas/
+// campanhas, já que passam por esta função única.
 function renderTemplate(bodyText, variables = {}) {
+  const allVariables = { saudacao: greetingForCurrentTime(), ...variables };
+
   return String(bodyText || '').replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (match, key) => {
-    const value = variables[key];
+    const value = allVariables[key];
     return value === undefined || value === null ? '' : String(value);
   });
 }

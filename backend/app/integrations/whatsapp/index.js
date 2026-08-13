@@ -17,6 +17,10 @@
 //     sempre um caminho de arquivo local (nunca uma URL remota)
 //   - function getConnectionStatus() -> { connected: boolean, lastEventAt: Date|null }
 //   - function onSessionDown(callback)
+//   - function onMessageReceived(callback) — callback recebe
+//     { from, body, timestamp }, `from` sempre em E.164 (Fase 9 — caixa de
+//     entrada); só dispara para mensagens genuinamente recebidas (nunca as
+//     enviadas pela própria loja) e nunca para mensagens de grupo.
 //   - async function checkNumberStatus(phoneE164) -> { hasWhatsapp: boolean, waId: string|null }
 //     (usada pela sincronização com o Uniplus — Fase 4 — para validar
 //     candidatos a telefone antes de gravar em customers.phone_e164; ver
@@ -53,5 +57,6 @@ module.exports = {
   sendImage: provider.sendImage,
   getConnectionStatus: provider.getConnectionStatus,
   onSessionDown: provider.onSessionDown,
+  onMessageReceived: provider.onMessageReceived,
   checkNumberStatus: provider.checkNumberStatus,
 };

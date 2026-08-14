@@ -31,6 +31,7 @@ const settingsController = require('./controllers/settings.controller');
 const inboxController = require('./controllers/inbox.controller');
 const inboxService = require('./services/inbox.service');
 const npsController = require('./controllers/nps.controller');
+const reportsController = require('./controllers/reports.controller');
 const { requireAuth, requireAdmin } = require('./middleware/auth.middleware');
 const whatsapp = require('./integrations/whatsapp');
 const { startMessageQueueJob } = require('./jobs/message-queue.job');
@@ -217,6 +218,12 @@ app.get('/nps/responses', requireAuth, npsController.listResponses);
 app.get('/nps/responses/export', requireAuth, npsController.exportResponses);
 app.post('/nps/responses/:id/treatments', requireAuth, requireAdmin, npsController.createTreatment);
 app.get('/nps/responses/:id/treatments', requireAuth, requireAdmin, npsController.listTreatments);
+
+// ===== Rotas de Relatórios/Dashboards (FSD 6.7/22 — leitura liberada a
+// Admin e Acesso Limitado) =====
+
+app.get('/reports/dashboard', requireAuth, reportsController.getDashboard);
+app.get('/reports/dashboard/export', requireAuth, reportsController.exportDashboard);
 
 // ===== Rotas de Configurações (FSD 12.13 — exclusivas do Admin) =====
 

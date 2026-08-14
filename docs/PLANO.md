@@ -281,9 +281,9 @@ Decisões técnicas tomadas durante a preparação do terreno (07/08/2026), para
 **Objetivo:** implementar o módulo 6.7 e a seção 22 — dashboard geral, desempenho de campanha e exportações CSV/PDF.
 
 **Checklist:**
-- [ ] Dashboard geral (taxa de recompra, ticket médio, frequência, ativos x inativos, NPS médio).
+- [x] Dashboard geral (taxa de recompra, ticket médio, frequência, ativos x inativos, NPS médio) — Parte 1, 14/08/2026.
 - [ ] Desempenho por campanha.
-- [ ] Exportação CSV (todos os relatórios da seção 22) respeitando filtros e permissões da tela de origem.
+- [x] Exportação CSV do dashboard geral — Parte 1, 14/08/2026 (demais relatórios da seção 22 seguem pendentes, ver Parte 4 do plano de execução em docs/STATUS.md).
 - [ ] Exportação PDF (dashboard geral e desempenho de campanha) — biblioteca de geração de PDF no backend.
 - [ ] Índices de banco revisados para as consultas de maior volume (log de disparos, NPS, vendas por período).
 

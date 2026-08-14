@@ -1,7 +1,99 @@
 # Status do Projeto — CRM Live
 
-**Última atualização:** 13/08/2026
-**Atualizado por:** Fase 10 — Parte 3 (ações de tratamento de NPS) implementada e testada, Fase 10 concluída; alerta de nota baixa por WhatsApp ao Administrador implementado e testado; Parte 2 (tela de gestão de NPS) implementada e testada; Parte 1 (captura de resposta de NPS) implementada e testada; Fase 9 (Caixa de entrada, atendimento e encaminhamento de lead) implementada e testada, Fase 9 concluída; Fase 8 — Parte 5 (Campanhas) implementada e testada, Fase 8 concluída; Parte 4 (Cross-sell) implementada e testada; Parte 1 (Templates) implementada e testada; validação da Fase 7 em ambiente real
+**Última atualização:** 14/08/2026
+**Atualizado por:** Fase 11 — Parte 1 (Dashboard geral de relacionamento) implementada e testada; Fase 10 — Parte 3 (ações de tratamento de NPS) implementada e testada, Fase 10 concluída; alerta de nota baixa por WhatsApp ao Administrador implementado e testado; Parte 2 (tela de gestão de NPS) implementada e testada; Parte 1 (captura de resposta de NPS) implementada e testada; Fase 9 (Caixa de entrada, atendimento e encaminhamento de lead) implementada e testada, Fase 9 concluída; Fase 8 — Parte 5 (Campanhas) implementada e testada, Fase 8 concluída; Parte 4 (Cross-sell) implementada e testada; Parte 1 (Templates) implementada e testada; validação da Fase 7 em ambiente real
+
+## Fase 11 — Parte 1: Dashboard geral de relacionamento — 14/08/2026
+
+**Objetivo (FSD 6.7, 22.1):** dashboard consolidado com taxa de recompra,
+ticket médio, frequência de compra, clientes ativos x inativos e NPS médio,
+com filtro de período e exportação CSV. A Fase 11 está sendo construída em
+5 partes, com checkpoint de autorização do responsável entre cada uma:
+(1) Dashboard geral, (2) Desempenho por campanha, (3) Exportação PDF,
+(4) CSV nos relatórios já existentes (consentimento, vendas sem cliente),
+(5) Revisão de índices de banco. **Parte 1 concluída e testada.**
+
+### O que já existia antes desta parte (levantamento feito antes de codar)
+
+- 22.5 (painel de sincronização) já existe desde a Fase 4, sem exportação
+  (o próprio FSD diz "não aplicável").
+- 22.3 (consentimento) e 22.4 (vendas sem cliente) já têm tela e endpoint —
+  só falta a exportação CSV (Parte 4).
+- 22.2 (desempenho por campanha) já tem o cálculo por campanha individual
+  (`campaigns.service.js#getCampaignResults`, usado no "Ver resultado" da
+  Fase 8) — falta a tela de relatório consolidada (Parte 2).
+- 22.1 (dashboard geral) não existia — o `Dashboard.jsx` era só um menu de
+  atalhos, sem nenhuma métrica real. É o que esta parte entrega.
+
+### Decisões de design (fórmulas não definidas pelo FSD, resolvidas por leitura literal + reaproveitamento do que já existe)
+
+- **Taxa de recompra:** % de clientes com MAIS DE UMA compra no período,
+  sobre o total de clientes com AO MENOS UMA compra no período (definição
+  padrão de "repeat purchase rate").
+- **Ticket médio:** média de `sales.total_amount` no período.
+- **Frequência de compra:** total de vendas no período / clientes distintos
+  que compraram no período.
+- **NPS médio:** média de `nps_responses.score` entre as respostas
+  recebidas (`responded_at`) no período.
+- **Clientes ativos x inativos:** reaproveita a classificação RFM já
+  existente (`customers.rfm_segment`, Fase 5) em vez de inventar um
+  segundo critério — "inativo" é o nome de segmento convencional já usado
+  em todo o resto do sistema (`rfm.service.js`). É um retrato ATUAL, não
+  filtrado por período (o RFM já tem sua própria janela de recência
+  configurável). Sem critérios RFM configurados, o indicador fica
+  `pending_configuration` — mesmo padrão de outros parâmetros sem default.
+- **Período:** cada indicador filtra pela data que faz sentido pra ele
+  (`sales.sale_date` para recompra/ticket/frequência,
+  `nps_responses.responded_at` para NPS médio) — não existe uma coluna de
+  data única para "tudo". Padrão de últimos 30 dias quando nenhum filtro é
+  informado (FSD 22.1).
+
+### Implementação
+
+- `backend/app/services/dashboard-report.service.js` (novo) —
+  `getGeneralDashboard({ startDate, endDate })`.
+- `backend/app/controllers/reports.controller.js` (novo) — `getDashboard`,
+  `exportDashboard` (CSV com BOM UTF-8, formato chave/valor).
+- Rotas `GET /reports/dashboard`, `GET /reports/dashboard/export` — leitura
+  liberada a Admin e Acesso Limitado (FSD 6.7), sem `requireAdmin`.
+- `frontend/src/views/Dashboard.jsx` — substituída a versão placeholder
+  (só menu de atalhos) por uma versão com filtro de período, 6 cards de
+  métricas e exportação CSV; menu de atalhos mantido abaixo (ainda útil de
+  navegação, sem motivo pra remover).
+
+### Achado à parte (bug real, pré-existente, fora do escopo desta parte)
+
+- Durante o teste de UI, a saudação do Dashboard ("Bem-vindo, {nome}!")
+  apareceu vazia após um carregamento de página normal. Causa:
+  `auth.controller.js#getCurrentUser` (rota `GET /auth/me`, chamada pelo
+  `AuthContext` a cada carregamento de página) só retorna `{ id, role }` —
+  nunca `name`/`email`. O nome só existe em memória logo após o login via
+  `POST /auth/google/callback` (que retorna o usuário completo), e some em
+  qualquer recarregamento subsequente. Bug pré-existente desde a Fase 3,
+  não corrigido nesta parte (não bloqueava o teste, fora do escopo da Fase
+  11) — reportado ao responsável do projeto, aguardando decisão sobre
+  quando tratar.
+
+### Testes realizados
+
+- `node -c` nos arquivos novos/alterados; `vite build` completo sem erros.
+- Smoke tests: `/reports/dashboard` e `/reports/dashboard/export` retornam
+  401 sem sessão.
+- Testes diretos contra o Postgres real: valores conferidos com período
+  padrão (30 dias) e período amplo (01/01 a 14/08/2026, 12 vendas reais);
+  ramo `activeVsInactive` testado nos dois estados —
+  `pending_configuration` (estado real do ambiente, sem critérios RFM
+  configurados) e `ok` (critério RFM temporário configurado + 3 clientes
+  reais marcados manualmente, contagem de ativos/inativos/não classificados
+  conferida bit a bit) — critério temporário e classificação dos clientes
+  de teste revertidos ao final, ambiente restaurado ao estado original
+  (nenhum cliente real com `rfm_segment` alterado permanentemente).
+- Teste real de UI (extensão Chrome, sessão Admin real — precisou de novo
+  login, a sessão anterior expirou pelo TTL de 12h): os 6 cards de métrica
+  renderizam corretamente com o período padrão; filtro por período amplo
+  atualiza os valores (conferido batendo exatamente com o teste direto no
+  backend); exportação CSV validada via `fetch` no console da página (200,
+  conteúdo idêntico ao exibido na tela).
 
 ## Fase 10 — Parte 3: Ações de tratamento de NPS — 13/08/2026 (Fase 10 concluída)
 

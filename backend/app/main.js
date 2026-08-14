@@ -32,6 +32,7 @@ const inboxController = require('./controllers/inbox.controller');
 const inboxService = require('./services/inbox.service');
 const npsController = require('./controllers/nps.controller');
 const reportsController = require('./controllers/reports.controller');
+const salesInsightsController = require('./controllers/sales-insights.controller');
 const { requireAuth, requireAdmin } = require('./middleware/auth.middleware');
 const whatsapp = require('./integrations/whatsapp');
 const { startMessageQueueJob } = require('./jobs/message-queue.job');
@@ -193,6 +194,12 @@ app.post('/complementary-products', requireAuth, complementaryProductsController
 app.post('/complementary-products/detect-patterns', requireAuth, complementaryProductsController.detectPatterns);
 app.patch('/complementary-products/:id/toggle-active', requireAuth, complementaryProductsController.toggleActive);
 app.delete('/complementary-products/:id', requireAuth, complementaryProductsController.deleteComplementaryProduct);
+
+// Venda Inteligente — Parte 2 (jornadas de compra e itens sem venda, ver
+// sales-insights.service.js) — leitura liberada a Admin e Acesso Limitado,
+// mesmo padrão do resto da iniciativa.
+app.get('/sales-insights/journeys', requireAuth, salesInsightsController.getJourneys);
+app.get('/sales-insights/slow-movers', requireAuth, salesInsightsController.getSlowMovers);
 
 // Campanhas manuais (FSD 6.4/12.6) — leitura E escrita liberadas a Admin e
 // Acesso Limitado (FSD linha 332 da matriz de permissões).

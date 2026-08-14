@@ -1,7 +1,7 @@
 # Status do Projeto — CRM Live
 
 **Última atualização:** 14/08/2026
-**Atualizado por:** Venda Inteligente — Parte 1 (motor de detecção de produtos comprados juntos) implementada e testada; Fase 11 — Parte 1 (Dashboard geral de relacionamento) implementada e testada; Fase 10 — Parte 3 (ações de tratamento de NPS) implementada e testada, Fase 10 concluída; alerta de nota baixa por WhatsApp ao Administrador implementado e testado; Parte 2 (tela de gestão de NPS) implementada e testada; Parte 1 (captura de resposta de NPS) implementada e testada; Fase 9 (Caixa de entrada, atendimento e encaminhamento de lead) implementada e testada, Fase 9 concluída; Fase 8 — Parte 5 (Campanhas) implementada e testada, Fase 8 concluída; Parte 4 (Cross-sell) implementada e testada; Parte 1 (Templates) implementada e testada; validação da Fase 7 em ambiente real
+**Atualizado por:** Venda Inteligente — Parte 2 (jornadas de compra + itens sem venda) implementada e testada; Venda Inteligente — Parte 1 (motor de detecção de produtos comprados juntos) implementada e testada; Fase 11 — Parte 1 (Dashboard geral de relacionamento) implementada e testada; Fase 10 — Parte 3 (ações de tratamento de NPS) implementada e testada, Fase 10 concluída; alerta de nota baixa por WhatsApp ao Administrador implementado e testado; Parte 2 (tela de gestão de NPS) implementada e testada; Parte 1 (captura de resposta de NPS) implementada e testada; Fase 9 (Caixa de entrada, atendimento e encaminhamento de lead) implementada e testada, Fase 9 concluída; Fase 8 — Parte 5 (Campanhas) implementada e testada, Fase 8 concluída; Parte 4 (Cross-sell) implementada e testada; Parte 1 (Templates) implementada e testada; validação da Fase 7 em ambiente real
 
 ## Venda Inteligente — Parte 1: Motor de detecção de produtos comprados juntos — 14/08/2026
 
@@ -114,6 +114,136 @@ explícita do Admin). **Parte 1 concluída e testada.**
 - Criação automática de rascunho de cupom/giftback/régua/campanha (além do
   giftback/cupom manual que o Admin já configura na régua de Cross-sell)
   fica pra Parte 4.
+
+## Venda Inteligente — Parte 2: Jornadas de compra e itens sem venda — 14/08/2026
+
+**Objetivo (pedido do responsável, ver Parte 1 para o contexto da iniciativa
+completa):** *"mostrar 'jornadas de compra' mais frequentes entre os
+clientes... Teria visão por grupos e dentro dos grupos os itens mais
+escolhidos"* e *"Itens sem vendas: ranking por grupo menos vendido e dentro
+deles os itens com menos chances de procura"*. Só backend nesta parte — sem
+tela nova, sem tocar no Dashboard (fica pra Parte 3). **Parte 2 concluída e
+testada.**
+
+### Decisões de design (confirmadas com o responsável antes de codar)
+
+- **Arquivo irmão, não extensão do motor da Parte 1:**
+  `sales-insights.service.js` (novo) em vez de estender
+  `product-affinity.service.js`. São conceitualmente diferentes: a Parte 1
+  calcula pares específicos de produto (A, B) com limiares de confiança pra
+  virar sugestão real de cross-sell (efeito colateral em
+  `complementary_products`); esta parte só produz relatórios agregados por
+  CATEGORIA, sem threshold mínimo e sem nenhum efeito colateral — é
+  puramente informativo. Reaproveita a mesma ideia de CTE `sale_products`
+  (vendas distintas por produto) do motor da Parte 1, mas a agregação final
+  é por categoria, não por par.
+- **Jornadas de compra — exclusão de auto-coocorrência:** um produto sozinho
+  numa venda não pode "acompanhar a si mesmo" — senão toda venda de item
+  único da categoria X infla artificialmente o próprio item como
+  "acompanhante" de X. A query exige que o produto acompanhante seja um
+  `sale_items` DIFERENTE do produto específico que colocou aquela venda na
+  categoria (join com `product_id != category_product_id`), preservando
+  ainda o caso correto de duas vendas de produtos DIFERENTES da MESMA
+  categoria juntos (ex.: duas cores de tinta no mesmo carrinho — contam como
+  jornada de "Tintas" uma acompanhando a outra). Testado explicitamente (ver
+  abaixo).
+- **Categoria `null`:** produtos sem `category` preenchida não geram grupo
+  como categoria "gatilho" de jornada (não faz sentido perguntar "o que
+  acompanha uma categoria vazia"), mas PODEM aparecer como item acompanhante
+  de outra categoria (a regra do pedido é "produtos de qualquer categoria").
+  Em itens sem venda, um produto sem categoria ainda aparece, agrupado sob
+  `category: null` — não há pedido explícito pra excluí-lo do relatório de
+  catálogo parado.
+- **Itens sem venda — sem limite de itens por categoria:** diferente das
+  jornadas (top 10 por categoria, senão a lista de "tudo que já apareceu
+  junto" cresce sem necessidade prática), aqui o caso de uso é auditoria de
+  catálogo parado — a lista completa por categoria é o que interessa, não um
+  recorte.
+- **Itens sem venda — filtro de período no JOIN, não no WHERE:** o filtro de
+  `startDate`/`endDate` entra na condição do `LEFT JOIN sales`, não num
+  `WHERE` depois — um produto com vendas só FORA do período pedido precisa
+  continuar aparecendo com `salesCount = 0` nesse período (não sumir da
+  lista, que é o caso mais importante do relatório). Testado explicitamente.
+
+### Implementação
+
+- `backend/app/services/sales-insights.service.js` (novo) —
+  `getPurchaseJourneys()` (SQL de coocorrência agregada por categoria, top
+  10 por categoria via `ROW_NUMBER() OVER (PARTITION BY category ...)`) e
+  `getSlowMovingProducts({ startDate, endDate })` (`LEFT JOIN` de
+  `sale_items`/`sales` com filtro de período no `ON`, só produtos
+  `active = true`, sem período informado = todo o histórico). Ambas
+  retornam `[{ category, items: [...] }]` já ordenado.
+- `backend/app/controllers/sales-insights.controller.js` (novo) —
+  `getJourneys`, `getSlowMovers`.
+- Rotas `GET /sales-insights/journeys`, `GET
+  /sales-insights/slow-movers?startDate=&endDate=` em `backend/app/main.js`
+  — leitura liberada a Admin e Acesso Limitado (mesmo padrão do resto da
+  iniciativa), sem `requireAdmin`.
+- `frontend/vite.config.js` — prefixo `/sales-insights` adicionado ao array
+  `apiPrefixes` (necessário pra quando a Parte 3 consumir esses endpoints
+  pelo proxy do Vite; nenhuma tela nova criada nesta parte).
+- Sem migration nova — agregação pura sobre `sales`/`sale_items`/`products`
+  existentes, nada persistido.
+
+### Testes realizados
+
+- `node -c` nos arquivos novos/alterados (`sales-insights.service.js`,
+  `sales-insights.controller.js`, `main.js`).
+- Ambiente compartilhado com outro agente trabalhando em paralelo (Fase 11
+  Parte 2) — backend NÃO foi reiniciado, nenhum teste HTTP via
+  curl/fetch contra as rotas novas (só existem após restart). Lógica
+  testada direto contra o Postgres real, executando as mesmas queries do
+  serviço via `docker compose exec -T backend node` (script lido via stdin,
+  sem precisar existir dentro do container — o worktree deste agente não é
+  o diretório montado pelo container).
+- Dados de teste inseridos com prefixo exclusivo `TEST-JOURNEY-` (nunca
+  colide com o prefixo usado pelo outro agente): 7 produtos (2 categoria
+  "TESTE-JORNADA Tintas", 5 "TESTE-JORNADA Ferramentas", incluindo 1 sem
+  nenhuma venda e 1 inativo) e 6 vendas multi-item cobrindo: item único
+  (sem auto-coocorrência), dois produtos da MESMA categoria juntos (Tinta A
+  + Tinta B), e coocorrências cruzadas de categoria. Resultado batido à mão
+  contra o SQL antes de rodar:
+  - `getPurchaseJourneys()`: categoria "TESTE-JORNADA Ferramentas" trouxe
+    Rolo e Tinta A empatados em 2, seguidos de Lixa/Pincel/Tinta B em 1
+    (desempate alfabético correto); categoria "TESTE-JORNADA Tintas" trouxe
+    Lixa em 2 (a venda #2, exclusiva de Tinta A+Lixa, mais a venda #1),
+    seguida de Pincel/Rolo/Tinta A/Tinta B em 1 — confirmando que Tinta A e
+    Tinta B contam uma como acompanhante da outra (mesma categoria) e que a
+    venda de Lixa sozinha (item único) NÃO gerou auto-coocorrência.
+  - `getSlowMovingProducts({})` sem filtro: produto sem nenhuma venda
+    (Parado) aparece em primeiro com `salesCount: 0`; produto inativo
+    (Inativo) não aparece em nenhum grupo; contagens crescentes batendo
+    exatamente com o cálculo manual (Pincel/Rolo empatados em 2, Lixa em 3;
+    Tinta B em 2, Tinta A em 3).
+  - `getSlowMovingProducts({ startDate: '2024-01-01', endDate: '2024-12-31'
+    })`: uma das 6 vendas de teste foi datada de 2020 (fora do período) —
+    confirmado que os produtos dela tiveram a contagem reduzida
+    corretamente nesse período (Rolo caiu de 2 para 1, Lixa de 3 para 2)
+    SEM sumir da lista, e o produto sem nenhuma venda continuou em 0.
+  - Exemplo real de saída (`getPurchaseJourneys`, categoria "TESTE-JORNADA
+    Ferramentas"):
+    ```json
+    { "category": "TESTE-JORNADA Ferramentas", "items": [
+      { "productName": "TESTE-JORNADA Rolo", "coOccurrenceCount": 2 },
+      { "productName": "TESTE-JORNADA Tinta A", "coOccurrenceCount": 2 },
+      { "productName": "TESTE-JORNADA Lixa", "coOccurrenceCount": 1 },
+      { "productName": "TESTE-JORNADA Pincel", "coOccurrenceCount": 1 },
+      { "productName": "TESTE-JORNADA Tinta B", "coOccurrenceCount": 1 }
+    ]}
+    ```
+  - Todo dado de teste removido ao final; conferido por query que zero
+    vendas/produtos/itens de teste restaram (`sale_items` órfãos = 0,
+    `sales`/`products` com prefixo `TEST-JOURNEY-` = 0).
+
+### Pendências desta parte (cobertas na Parte 3)
+
+- Card de resumo no Dashboard + tela dedicada de "Venda Inteligente" que vai
+  consumir `GET /sales-insights/journeys` e `GET
+  /sales-insights/slow-movers` — nenhuma tela criada nesta parte,
+  propositalmente.
+- Criação automática de rascunho de cupom/giftback/régua/campanha a partir
+  desses relatórios fica pra Parte 4.
 
 ## Fase 11 — Parte 1: Dashboard geral de relacionamento — 14/08/2026
 

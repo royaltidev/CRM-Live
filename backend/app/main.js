@@ -201,6 +201,8 @@ app.delete('/complementary-products/:id', requireAuth, complementaryProductsCont
 // mesmo padrão do resto da iniciativa.
 app.get('/sales-insights/journeys', requireAuth, salesInsightsController.getJourneys);
 app.get('/sales-insights/slow-movers', requireAuth, salesInsightsController.getSlowMovers);
+app.get('/sales-insights/situations', requireAuth, salesInsightsController.getSituations);
+app.get('/sales-insights/overview', requireAuth, salesInsightsController.getOverview);
 
 // Campanhas manuais (FSD 6.4/12.6) — leitura E escrita liberadas a Admin e
 // Acesso Limitado (FSD linha 332 da matriz de permissões).

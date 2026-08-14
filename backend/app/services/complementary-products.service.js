@@ -100,6 +100,30 @@ async function createComplementaryProduct({ productId, complementaryProductId, c
   }
 }
 
+// Cria uma sugestão gerada pelo motor de detecção de padrões (Venda
+// Inteligente, escopo novo — ver product-affinity.service.js). Sempre
+// inativa (pendente de revisão do Admin/Acesso Limitado na própria tela de
+// Cross-sell) e sem created_by (gerada pelo sistema, não por um usuário —
+// migration 038 tornou a coluna nullable para este caso). Ignora
+// silenciosamente pares já existentes (qualquer origem) em vez de lançar
+// erro — o motor roda em lote, sobre muitos candidatos.
+async function createSuggestedComplementaryProduct({ productId, complementaryProductId }) {
+  try {
+    const result = await crmPool.query(
+      `INSERT INTO complementary_products (product_id, complementary_product_id, source, active, created_by)
+       VALUES ($1, $2, 'suggested', false, NULL)
+       RETURNING id`,
+      [productId, complementaryProductId]
+    );
+    return getComplementaryProductById(result.rows[0].id);
+  } catch (err) {
+    if (err.code === PG_UNIQUE_VIOLATION) {
+      return null;
+    }
+    throw err;
+  }
+}
+
 async function toggleActive(id) {
   const existing = await getComplementaryProductById(id);
   if (!existing) {
@@ -125,6 +149,7 @@ module.exports = {
   getComplementaryProductById,
   getActiveComplementsForProduct,
   createComplementaryProduct,
+  createSuggestedComplementaryProduct,
   toggleActive,
   deleteComplementaryProduct,
 };

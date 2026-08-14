@@ -16,6 +16,7 @@ const KEYS = {
   CAMPAIGN_ATTRIBUTION_DAYS: 'campaign_attribution_days',
   AI_DEEPSEEK_ENABLED: 'ai_deepseek_enabled',
   LEAD_INTENT_KEYWORDS: 'lead_intent_keywords',
+  SMART_SALES_AI_ENABLED: 'smart_sales_ai_enabled',
 };
 
 async function getSettingValue(key) {
@@ -120,6 +121,35 @@ async function setAiDeepseekEnabled(enabled, updatedBy) {
   return enabled;
 }
 
+// Ativa/desativa o refinamento por IA (DeepSeek) das sugestões de "Venda
+// Inteligente" (produtos frequentemente comprados juntos — escopo novo,
+// fora do FSD original, ver product-affinity.service.js). Flag PRÓPRIA,
+// independente de ai_deepseek_enabled (Fase 9) — são usos diferentes da IA,
+// o responsável do projeto pode querer ligar/desligar cada um
+// separadamente. TEM valor padrão (ativada), mesmo raciocínio do
+// ai_deepseek_enabled: desativar é decisão explícita do Administrador, não
+// o estado inicial. Desativada (ou falha na chamada), o motor de detecção
+// usa só os candidatos estatísticos, sem bloquear a funcionalidade.
+async function getSmartSalesAiEnabled() {
+  const value = await getSettingValue(KEYS.SMART_SALES_AI_ENABLED);
+  return value && typeof value.enabled === 'boolean' ? value.enabled : true;
+}
+
+async function setSmartSalesAiEnabled(enabled, updatedBy) {
+  if (typeof enabled !== 'boolean') {
+    throw new Error('O valor de ativação da IA de Venda Inteligente deve ser verdadeiro ou falso.');
+  }
+
+  await upsertSettingValue(
+    KEYS.SMART_SALES_AI_ENABLED,
+    { enabled },
+    'Ativa/desativa o refinamento por IA das sugestões de produtos frequentemente comprados juntos (Venda Inteligente).',
+    updatedBy
+  );
+
+  return enabled;
+}
+
 // Palavras-chave usadas para classificar a intenção de uma mensagem
 // recebida quando a IA DeepSeek está desativada (ver lead-intent.service.js).
 // NÃO tem valor padrão: enquanto vazias, nenhuma mensagem é classificada por
@@ -171,6 +201,8 @@ module.exports = {
   getCampaignAttributionDays,
   getAiDeepseekEnabled,
   setAiDeepseekEnabled,
+  getSmartSalesAiEnabled,
+  setSmartSalesAiEnabled,
   getLeadIntentKeywords,
   setLeadIntentKeywords,
 };

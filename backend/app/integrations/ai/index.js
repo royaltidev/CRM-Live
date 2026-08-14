@@ -16,6 +16,13 @@
 // Interface exportada (independente do provedor escolhido):
 //   - async function classifyLeadIntent({ messageBody }) ->
 //       Promise<'purchase_intent' | 'doubt' | 'none'>
+//   - async function refineProductAffinitySuggestions({ candidates }) ->
+//       Promise<Array<{ productAId, productBId, accept, description }>>
+//     (Venda Inteligente — escopo novo, fora do FSD original: refina os
+//     candidatos estatísticos de "produtos comprados juntos" calculados por
+//     product-affinity.service.js, filtrando coincidências e sugerindo uma
+//     descrição legível. Nunca recebe o histórico de vendas bruto — só a
+//     lista já agregada de candidatos.)
 
 const settings = require('../../config/settings');
 
@@ -41,4 +48,5 @@ const provider = loadProvider();
 
 module.exports = {
   classifyLeadIntent: provider.classifyLeadIntent,
+  refineProductAffinitySuggestions: provider.refineProductAffinitySuggestions,
 };

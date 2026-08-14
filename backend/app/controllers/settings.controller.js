@@ -51,7 +51,33 @@ async function updateLeadIntentClassificationSettings(req, res) {
   }
 }
 
+// GET /settings/smart-sales-ai (Venda Inteligente — escopo novo, ver
+// product-affinity.service.js).
+async function getSmartSalesAiSettings(req, res) {
+  try {
+    const aiEnabled = await automationSettingsService.getSmartSalesAiEnabled();
+    res.json({ aiEnabled });
+  } catch (err) {
+    console.error('Erro ao carregar configuração de IA da Venda Inteligente:', err.message);
+    res.status(500).json({ error: 'Erro ao carregar configuração.' });
+  }
+}
+
+// PUT /settings/smart-sales-ai
+async function updateSmartSalesAiSettings(req, res) {
+  try {
+    const { aiEnabled } = req.body;
+    const updated = await automationSettingsService.setSmartSalesAiEnabled(aiEnabled, req.user.id);
+    res.json({ aiEnabled: updated });
+  } catch (err) {
+    console.error('Erro ao salvar configuração de IA da Venda Inteligente:', err.message);
+    res.status(400).json({ error: err.message || 'Erro ao salvar configuração.' });
+  }
+}
+
 module.exports = {
   getLeadIntentClassificationSettings,
   updateLeadIntentClassificationSettings,
+  getSmartSalesAiSettings,
+  updateSmartSalesAiSettings,
 };

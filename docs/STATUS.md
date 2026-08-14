@@ -1,7 +1,119 @@
 # Status do Projeto — CRM Live
 
 **Última atualização:** 14/08/2026
-**Atualizado por:** Fase 11 — Parte 1 (Dashboard geral de relacionamento) implementada e testada; Fase 10 — Parte 3 (ações de tratamento de NPS) implementada e testada, Fase 10 concluída; alerta de nota baixa por WhatsApp ao Administrador implementado e testado; Parte 2 (tela de gestão de NPS) implementada e testada; Parte 1 (captura de resposta de NPS) implementada e testada; Fase 9 (Caixa de entrada, atendimento e encaminhamento de lead) implementada e testada, Fase 9 concluída; Fase 8 — Parte 5 (Campanhas) implementada e testada, Fase 8 concluída; Parte 4 (Cross-sell) implementada e testada; Parte 1 (Templates) implementada e testada; validação da Fase 7 em ambiente real
+**Atualizado por:** Venda Inteligente — Parte 1 (motor de detecção de produtos comprados juntos) implementada e testada; Fase 11 — Parte 1 (Dashboard geral de relacionamento) implementada e testada; Fase 10 — Parte 3 (ações de tratamento de NPS) implementada e testada, Fase 10 concluída; alerta de nota baixa por WhatsApp ao Administrador implementado e testado; Parte 2 (tela de gestão de NPS) implementada e testada; Parte 1 (captura de resposta de NPS) implementada e testada; Fase 9 (Caixa de entrada, atendimento e encaminhamento de lead) implementada e testada, Fase 9 concluída; Fase 8 — Parte 5 (Campanhas) implementada e testada, Fase 8 concluída; Parte 4 (Cross-sell) implementada e testada; Parte 1 (Templates) implementada e testada; validação da Fase 7 em ambiente real
+
+## Venda Inteligente — Parte 1: Motor de detecção de produtos comprados juntos — 14/08/2026
+
+**Iniciativa nova, fora das 11 fases do FSD original** — pedida pelo
+responsável do projeto em 14/08/2026, durante a Fase 11. Objetivo: usar o
+histórico real de vendas pra identificar oportunidades comerciais
+(produtos sempre comprados juntos, "jornadas de compra", produtos parados),
+com um card de resumo no Dashboard levando a uma tela dedicada. Combinado
+com o responsável: 4 partes — (1) motor de detecção + produtos comprados
+juntos [fecha a pendência documentada desde a Fase 8 Parte 4], (2) jornadas
+de compra + itens sem venda, (3) card no Dashboard + tela dedicada,
+(4) criação automática de RASCUNHOS de cupons/giftbacks/réguas/campanhas
+(nunca ativados sozinhos — sempre pendentes de revisão e confirmação
+explícita do Admin). **Parte 1 concluída e testada.**
+
+### Decisões de design (confirmadas com o responsável antes de codar)
+
+- **IA envolvida, mas não na contagem:** a camada SQL (determinística)
+  sempre calcula os candidatos — contar coocorrência em milhares de vendas
+  não é trabalho pra uma LLM (caro, lento, não confiável). A IA (DeepSeek,
+  reaproveitando `backend/app/integrations/ai/` da Fase 9) entra como
+  refinamento OPCIONAL sobre os candidatos JÁ filtrados estatisticamente:
+  decide quais são relações genuínas (descarta coincidências) e escreve uma
+  descrição curta. Flag própria `smart_sales_ai_enabled` (independente de
+  `ai_deepseek_enabled` da Fase 9 — são usos diferentes da IA), com
+  fallback automático pros candidatos estatísticos puros se a IA estiver
+  desativada ou falhar (fail-open, mesmo padrão da classificação de
+  intenção de lead).
+- **Reaproveita `complementary_products` em vez de tabela nova:** o campo
+  `source` já existia com os valores `'manual'`/`'suggested'` desde a Fase
+  8 Parte 4, documentado como pendência exatamente pra este cenário. Um
+  padrão detectado vira uma linha `source='suggested', active=false` —
+  aparece na PRÓPRIA tela de Cross-sell (que já mostra "origem" e já tem
+  ativar/desativar), sem precisar de nenhuma tela nova nesta parte. Exigiu
+  migration 038 (`created_by` de `complementary_products` passou a aceitar
+  NULL — uma sugestão do sistema não tem um usuário humano como autor).
+- **Regra de associação:** para cada par ORDENADO (A, B), calcula
+  `coOccurrence` (vendas distintas com os dois) e `confidence` =
+  coOccurrence / vendas distintas de A. Candidato só é considerado com
+  `coOccurrence >= 2` E `confidence >= 0.5` (limiares fixos no código por
+  enquanto, não expostos como parâmetro configurável — sem pedido explícito
+  pra isso). Pares que já têm QUALQUER linha em `complementary_products`
+  (manual ou já sugerida) são ignorados, pra não duplicar.
+- **Descrição da IA não é persistida:** o schema de `complementary_products`
+  não tem campo pra isso; a descrição aparece só no retorno da chamada que
+  disparou a detecção (transparência imediata pro Admin), não fica salva
+  permanentemente. Pode virar um campo real na Parte 3 (tela dedicada) se
+  fizer sentido guardar o histórico.
+
+### Implementação
+
+- `backend/app/database/migrations/038_make_complementary_products_created_by_nullable.js`.
+- `backend/app/services/automation-settings.service.js` —
+  `getSmartSalesAiEnabled`/`setSmartSalesAiEnabled` (chave
+  `smart_sales_ai_enabled`, padrão ativada).
+- `backend/app/integrations/ai/index.js` + `providers/deepseek-provider.js`
+  — nova função `refineProductAffinitySuggestions({ candidates })`, mesma
+  camada de abstração da Fase 9 (nenhum outro módulo fala com a API do
+  DeepSeek diretamente).
+- `backend/app/services/complementary-products.service.js` —
+  `createSuggestedComplementaryProduct` (sempre inativa, sem `created_by`,
+  ignora duplicata silenciosamente em vez de lançar erro — o motor roda em
+  lote).
+- `backend/app/services/product-affinity.service.js` (novo) —
+  `findCandidatePairs` (SQL de coocorrência/confiança) e
+  `detectFrequentlyBoughtTogether` (orquestra SQL → IA opcional → criação
+  das sugestões aceitas).
+- `backend/app/controllers/complementary-products.controller.js` +
+  `backend/app/controllers/settings.controller.js` — `detectPatterns`
+  (`POST /complementary-products/detect-patterns`) e
+  `getSmartSalesAiSettings`/`updateSmartSalesAiSettings`
+  (`GET`/`PUT /settings/smart-sales-ai`).
+- `frontend/src/views/CrossSell/CrossSell.jsx` — botão "Detectar padrões
+  automaticamente" + diálogo de resultado (candidatos avaliados, sugestões
+  criadas, se usou IA, descrição de cada uma).
+- `frontend/src/views/Configuracoes/Configuracoes.jsx` — novo card com o
+  toggle de IA da Venda Inteligente.
+
+### Testes realizados
+
+- `node -c` nos arquivos novos/alterados; `vite build` completo sem erros.
+- Smoke tests: `POST /complementary-products/detect-patterns` e
+  `GET`/`PUT /settings/smart-sales-ai` retornam 401 sem sessão.
+- Testes diretos contra o Postgres real: sem vendas multi-item reais no
+  ambiente, nenhum candidato é encontrado (confirmado); com 3 vendas de
+  teste inserindo Mochila+Boné juntos, o par foi corretamente detectado nas
+  duas direções, com `coOccurrence`/`confidence` calculados certos
+  (conferidos manualmente contra o SQL); o par já cadastrado manualmente
+  (Tênis→Camiseta) nunca apareceu como candidato; rodar a detecção duas
+  vezes seguidas não duplica (segunda rodada não encontra mais candidatos
+  pro mesmo par); testado com IA real habilitada (aceitou os candidatos,
+  gerou descrições coerentes) e com IA desativada (usa todos os candidatos
+  estatísticos, sem descrição). Todo dado de teste (vendas, itens,
+  sugestões) removido ao final.
+- Teste real de UI (extensão Chrome, sessão Admin): botão "Detectar
+  padrões" na tela de Cross-sell rodou a detecção real (mesmas 3 vendas de
+  teste), diálogo de resultado mostrou os dois candidatos com descrições
+  da IA, e as sugestões apareceram na listagem principal como
+  "Sugerido"/"Inativo" com botão "Ativar" disponível — sem precisar de
+  nenhuma tela nova; toggle de IA em Configurações persistiu corretamente
+  após reload da página. Dado de teste (vendas e sugestões) removido ao
+  final; configuração de IA revertida ao padrão (ativada).
+
+### Pendências desta parte (cobertas nas próximas)
+
+- Card de resumo no Dashboard + tela dedicada de "Venda Inteligente" ficam
+  pra Parte 3 — por enquanto, a revisão das sugestões acontece na tela de
+  Cross-sell já existente.
+- "Jornadas de compra" e "itens sem venda" ficam pra Parte 2.
+- Criação automática de rascunho de cupom/giftback/régua/campanha (além do
+  giftback/cupom manual que o Admin já configura na régua de Cross-sell)
+  fica pra Parte 4.
 
 ## Fase 11 — Parte 1: Dashboard geral de relacionamento — 14/08/2026
 

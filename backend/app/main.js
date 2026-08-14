@@ -190,6 +190,7 @@ app.get('/complementary-products/settings/discount-percent', requireAuth, comple
 app.patch('/complementary-products/settings/discount-percent', requireAuth, complementaryProductsController.setDiscountPercent);
 app.get('/complementary-products', requireAuth, complementaryProductsController.listComplementaryProducts);
 app.post('/complementary-products', requireAuth, complementaryProductsController.createComplementaryProduct);
+app.post('/complementary-products/detect-patterns', requireAuth, complementaryProductsController.detectPatterns);
 app.patch('/complementary-products/:id/toggle-active', requireAuth, complementaryProductsController.toggleActive);
 app.delete('/complementary-products/:id', requireAuth, complementaryProductsController.deleteComplementaryProduct);
 
@@ -239,6 +240,8 @@ app.put(
   requireAdmin,
   settingsController.updateLeadIntentClassificationSettings
 );
+app.get('/settings/smart-sales-ai', requireAuth, requireAdmin, settingsController.getSmartSalesAiSettings);
+app.put('/settings/smart-sales-ai', requireAuth, requireAdmin, settingsController.updateSmartSalesAiSettings);
 
 // ===== Tratamento de Erros Genérico =====
 

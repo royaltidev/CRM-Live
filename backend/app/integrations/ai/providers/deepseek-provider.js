@@ -84,6 +84,82 @@ async function classifyLeadIntent({ messageBody }) {
   }
 }
 
+const AFFINITY_SYSTEM_PROMPT = `Você analisa candidatos estatísticos de "produtos frequentemente comprados juntos" de uma loja de varejo, calculados a partir do histórico real de vendas (contagem de coocorrência e confiança já calculadas — você não recebe vendas individuais).
+
+Para cada candidato, decida se ele representa uma relação de complementaridade genuína e acionável (útil para oferecer um desconto de cross-sell), ou se é provavelmente uma coincidência estatística (ex.: dois produtos populares que às vezes aparecem juntos sem relação de uso real). Rejeite pares que não fazem sentido como oferta comercial.
+
+Para cada candidato ACEITO, escreva uma descrição curta (uma frase, em português) explicando por que faz sentido oferecer o complemento.
+
+Responda SOMENTE com um JSON no formato:
+{"suggestions": [{"productAId": <int>, "productBId": <int>, "accept": true|false, "description": "<string ou null se accept=false>"}]}
+
+Inclua uma entrada para CADA candidato recebido, na mesma ordem.`;
+
+// Refina candidatos estatísticos de produtos comprados juntos (Venda
+// Inteligente). `candidates`: array de { productAId, productAName,
+// productACategory, productBId, productBName, productBCategory,
+// coOccurrence, confidence }. Lança erro em caso de configuração ausente,
+// falha de rede, timeout ou resposta inesperada — quem chama decide o
+// fallback (product-affinity.service.js usa todos os candidatos
+// estatísticos sem filtro adicional quando a IA falha ou está desativada).
+async function refineProductAffinitySuggestions({ candidates }) {
+  const apiKey = settings.ai && settings.ai.deepseek && settings.ai.deepseek.apiKey;
+  if (!apiKey || apiKey === 'CHANGE_ME') {
+    throw new Error('Chave de API do DeepSeek não configurada (settings.ai.deepseek.apiKey).');
+  }
+
+  if (!Array.isArray(candidates) || candidates.length === 0) {
+    return [];
+  }
+
+  const controller = new AbortController();
+  const timeoutHandle = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: settings.ai.deepseek.model || 'deepseek-chat',
+        messages: [
+          { role: 'system', content: AFFINITY_SYSTEM_PROMPT },
+          { role: 'user', content: JSON.stringify({ candidates }) },
+        ],
+        response_format: { type: 'json_object' },
+        temperature: 0,
+        max_tokens: 2000,
+      }),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => '');
+      throw new Error(`DeepSeek respondeu com status ${response.status}: ${errorText}`);
+    }
+
+    const data = await response.json();
+    const content =
+      data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
+
+    if (!content) {
+      throw new Error('Resposta do DeepSeek sem conteúdo.');
+    }
+
+    const parsed = JSON.parse(content);
+    if (!Array.isArray(parsed.suggestions)) {
+      throw new Error(`Resposta inesperada do DeepSeek: ${JSON.stringify(parsed)}`);
+    }
+
+    return parsed.suggestions;
+  } finally {
+    clearTimeout(timeoutHandle);
+  }
+}
+
 module.exports = {
   classifyLeadIntent,
+  refineProductAffinitySuggestions,
 };

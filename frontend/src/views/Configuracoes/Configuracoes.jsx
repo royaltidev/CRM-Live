@@ -37,6 +37,9 @@ export default function Configuracoes() {
   const [purchaseIntentKeywords, setPurchaseIntentKeywords] = useState([]);
   const [doubtKeywords, setDoubtKeywords] = useState([]);
 
+  const [smartSalesAiEnabled, setSmartSalesAiEnabled] = useState(true);
+  const [smartSalesSaving, setSmartSalesSaving] = useState(false);
+
   const handleAuthFailure = useCallback(
     async (response) => {
       if (response.status === 401) {
@@ -70,12 +73,44 @@ export default function Configuracoes() {
       setAiDeepseekEnabled(data.aiDeepseekEnabled);
       setPurchaseIntentKeywords(data.keywords?.purchaseIntent || []);
       setDoubtKeywords(data.keywords?.doubt || []);
+
+      const smartSalesResponse = await fetch('/settings/smart-sales-ai', {
+        method: 'GET',
+        credentials: 'include',
+      });
+      if (smartSalesResponse.ok) {
+        const smartSalesData = await smartSalesResponse.json();
+        setSmartSalesAiEnabled(smartSalesData.aiEnabled);
+      }
     } catch (err) {
       setError(err.message || 'Erro ao carregar configurações.');
     } finally {
       setLoading(false);
     }
   }, [handleAuthFailure]);
+
+  async function handleToggleSmartSalesAi(checked) {
+    try {
+      setSmartSalesSaving(true);
+      const response = await fetch('/settings/smart-sales-ai', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ aiEnabled: checked }),
+      });
+
+      if (await handleAuthFailure(response)) return;
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Não foi possível salvar.');
+
+      setSmartSalesAiEnabled(data.aiEnabled);
+      setSnackbar({ severity: 'success', message: 'Configuração de Venda Inteligente salva.' });
+    } catch (err) {
+      setSnackbar({ severity: 'error', message: err.message || 'Erro ao salvar configuração.' });
+    } finally {
+      setSmartSalesSaving(false);
+    }
+  }
 
   useEffect(() => {
     loadSettings();
@@ -214,6 +249,31 @@ export default function Configuracoes() {
               {saving ? 'Salvando...' : 'Salvar'}
             </Button>
           </Box>
+        </Card>
+      )}
+
+      {!loading && (
+        <Card sx={{ padding: 3, marginTop: 3 }}>
+          <Typography variant="h6" sx={{ marginBottom: 1 }}>
+            Venda Inteligente — detecção de produtos comprados juntos
+          </Typography>
+          <Typography variant="body2" sx={{ color: '#666666', marginBottom: 2 }}>
+            Ao detectar padrões de compra (tela de Cross-sell), o sistema calcula os candidatos
+            estatisticamente com base no histórico de vendas. Esta opção controla só o refinamento
+            opcional por IA sobre os candidatos já calculados (filtra coincidências e sugere uma
+            descrição) — a detecção em si nunca depende da IA.
+          </Typography>
+
+          <FormControlLabel
+            control={
+              <Switch
+                checked={smartSalesAiEnabled}
+                onChange={(e) => handleToggleSmartSalesAi(e.target.checked)}
+                disabled={smartSalesSaving}
+              />
+            }
+            label={smartSalesAiEnabled ? 'Refinar sugestões via IA (DeepSeek)' : 'Usar apenas os candidatos estatísticos'}
+          />
         </Card>
       )}
 

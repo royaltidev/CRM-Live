@@ -22,6 +22,7 @@ import {
   Snackbar,
   Autocomplete,
 } from '@mui/material';
+import AutoAwesomeOutlinedIcon from '@mui/icons-material/AutoAwesomeOutlined';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -81,6 +82,9 @@ export default function CrossSell() {
   const [deletingItem, setDeletingItem] = useState(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [snackbar, setSnackbar] = useState(null);
+
+  const [detecting, setDetecting] = useState(false);
+  const [detectResult, setDetectResult] = useState(null);
 
   const handleAuthFailure = useCallback(
     async (response) => {
@@ -307,6 +311,36 @@ export default function CrossSell() {
     }
   }
 
+  // Motor de detecção de padrões (Venda Inteligente — escopo novo, ver
+  // backend/services/product-affinity.service.js). Sugestões criadas
+  // entram inativas ('suggested') e aparecem na listagem acima pra revisão
+  // — nada é ativado automaticamente.
+  async function handleDetectPatterns() {
+    try {
+      setDetecting(true);
+      const response = await fetch('/complementary-products/detect-patterns', {
+        method: 'POST',
+        credentials: 'include',
+      });
+
+      if (await handleAuthFailure(response)) return;
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Não foi possível detectar padrões.');
+      }
+
+      setDetectResult(data);
+      if (data.suggestionsCreated > 0) {
+        await loadItems();
+      }
+    } catch (err) {
+      setSnackbar({ severity: 'error', message: err.message || 'Erro ao detectar padrões.' });
+    } finally {
+      setDetecting(false);
+    }
+  }
+
   const formatDate = (dateString) => {
     if (!dateString) return '—';
     return new Date(dateString).toLocaleDateString('pt-BR', {
@@ -396,9 +430,19 @@ export default function CrossSell() {
               </MenuItem>
             ))}
           </TextField>
-          <Button variant="contained" onClick={openCreateDialog}>
-            Novo produto complementar
-          </Button>
+          <Box sx={{ display: 'flex', gap: 2 }}>
+            <Button
+              variant="outlined"
+              startIcon={<AutoAwesomeOutlinedIcon />}
+              onClick={handleDetectPatterns}
+              disabled={detecting}
+            >
+              {detecting ? 'Detectando...' : 'Detectar padrões automaticamente'}
+            </Button>
+            <Button variant="contained" onClick={openCreateDialog}>
+              Novo produto complementar
+            </Button>
+          </Box>
         </Box>
       </Card>
 
@@ -531,6 +575,55 @@ export default function CrossSell() {
           <Button variant="contained" color="error" onClick={confirmDelete}>
             Excluir
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Resultado da detecção de padrões (Venda Inteligente) */}
+      <Dialog open={Boolean(detectResult)} onClose={() => setDetectResult(null)} maxWidth="sm" fullWidth>
+        <DialogTitle>Resultado da detecção de padrões</DialogTitle>
+        <DialogContent>
+          {detectResult && (
+            <>
+              <Typography variant="body2" sx={{ marginBottom: 2 }}>
+                {detectResult.candidatesEvaluated} candidato(s) avaliado(s), {detectResult.suggestionsCreated}{' '}
+                nova(s) sugestão(ões) criada(s) (inativa, revise abaixo na listagem).{' '}
+                {detectResult.aiUsed
+                  ? 'Refinado por IA (DeepSeek).'
+                  : 'IA não usada — só candidatos estatísticos.'}
+              </Typography>
+              {detectResult.aiError && (
+                <Alert severity="warning" sx={{ marginBottom: 2 }}>
+                  A IA falhou ({detectResult.aiError}) — usados os candidatos estatísticos sem filtro adicional.
+                </Alert>
+              )}
+              {detectResult.suggestions.length === 0 ? (
+                <Typography variant="body2" sx={{ color: '#666666' }}>
+                  Nenhum padrão novo encontrado — pode ser falta de vendas com múltiplos produtos, ou os pares já
+                  estarem cadastrados.
+                </Typography>
+              ) : (
+                detectResult.suggestions.map((s, idx) => (
+                  <Box key={idx} sx={{ marginBottom: 1.5, paddingBottom: 1.5, borderBottom: '1px solid #eee' }}>
+                    <Typography variant="body2">
+                      <strong>
+                        {s.productAName} → {s.productBName}
+                      </strong>{' '}
+                      ({s.coOccurrence} venda(s) juntas, {(s.confidence * 100).toFixed(0)}% de confiança)
+                      {!s.created && ' — já existia'}
+                    </Typography>
+                    {s.description && (
+                      <Typography variant="caption" sx={{ color: '#666666' }}>
+                        {s.description}
+                      </Typography>
+                    )}
+                  </Box>
+                ))
+              )}
+            </>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDetectResult(null)}>Fechar</Button>
         </DialogActions>
       </Dialog>
 

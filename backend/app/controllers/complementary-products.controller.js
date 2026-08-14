@@ -4,6 +4,7 @@
 
 const complementaryProductsService = require('../services/complementary-products.service');
 const automationSettingsService = require('../services/automation-settings.service');
+const productAffinityService = require('../services/product-affinity.service');
 
 function handleKnownErrors(err, res) {
   if (err.message === 'Relação de produto complementar não encontrada.') {
@@ -104,11 +105,26 @@ async function deleteComplementaryProduct(req, res) {
   }
 }
 
+// POST /complementary-products/detect-patterns (Venda Inteligente — escopo
+// novo, ver product-affinity.service.js). Roda o motor de detecção sob
+// demanda; sugestões aceitas entram inativas, revisão continua na própria
+// listagem acima (filtro por "origem").
+async function detectPatterns(req, res) {
+  try {
+    const result = await productAffinityService.detectFrequentlyBoughtTogether();
+    res.json(result);
+  } catch (err) {
+    console.error('Erro ao detectar padrões de produtos comprados juntos:', err.message);
+    res.status(500).json({ error: 'Erro ao detectar padrões de produtos comprados juntos.' });
+  }
+}
+
 module.exports = {
   listComplementaryProducts,
   getDiscountPercent,
   setDiscountPercent,
   createComplementaryProduct,
+  detectPatterns,
   toggleActive,
   deleteComplementaryProduct,
 };

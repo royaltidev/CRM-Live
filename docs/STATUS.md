@@ -108,10 +108,18 @@ implementação:
   query após o teste: zero campanhas/vendas com prefixo `TEST-PERF-` e
   `campaign_attribution_days` removido de `system_settings` (ambiente
   restaurado ao estado original, sem parâmetro configurado).
-- Não foi feito teste de HTTP (401 sem sessão) nem de UI real — as rotas
-  novas só existem depois que o backend compartilhado for reiniciado com o
-  código desta parte, o que fica para a verificação final combinada
-  (restart + smoke test + UI), fora do escopo desta sessão isolada.
+- **Verificação final (após mesclar na `main` e reiniciar o backend
+  compartilhado):** `node -c` em todos os arquivos; `vite build` completo
+  sem erros com o código já mesclado; smoke tests confirmando 401 sem
+  sessão nas duas rotas novas; `listCampaignPerformance` testada de novo
+  direto contra o Postgres real (agora via `require()` do módulo real, não
+  mais um script replicando a query) — campanha de teste
+  `TEST-MERGE-PERF` com 1 destinatário `sent` e 1 `delivered`, resultado
+  bateu exatamente; teste real de UI (extensão Chrome, sessão Admin): tela
+  carregou o empty state correto, uma campanha de teste real
+  (`TEST-UI-PERF`) apareceu com as contagens certas e o aviso de "não
+  disponível" explicado, exportação CSV validada via `fetch` no console
+  (conteúdo idêntico ao exibido). Dado de teste removido ao final.
 
 ### Pendências desta parte (cobertas nas próximas partes da Fase 11)
 
@@ -243,6 +251,15 @@ testada.**
   - Todo dado de teste removido ao final; conferido por query que zero
     vendas/produtos/itens de teste restaram (`sale_items` órfãos = 0,
     `sales`/`products` com prefixo `TEST-JOURNEY-` = 0).
+- **Verificação final (após mesclar na `main` e reiniciar o backend
+  compartilhado):** `node -c` no serviço/controller reais; smoke tests
+  confirmando 401 sem sessão em `GET /sales-insights/journeys` e
+  `/slow-movers`; as duas funções chamadas de novo via `require()` real
+  (não mais o script replicado por stdin) contra os dados reais do
+  ambiente — `getPurchaseJourneys()` retornou vazio (sem venda multi-item
+  real hoje, esperado) e `getSlowMovingProducts({})` retornou os 4
+  produtos reais corretamente agrupados por categoria e ordenados por
+  `salesCount` crescente.
 
 ### Pendências desta parte (cobertas na Parte 3)
 

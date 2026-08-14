@@ -1,7 +1,49 @@
 # Status do Projeto — CRM Live
 
 **Última atualização:** 14/08/2026
-**Atualizado por:** Venda Inteligente — Parte 3 (card no Dashboard + tela dedicada) implementada e testada; Fase 11 — Parte 2 (Desempenho por campanha) implementada e testada; Venda Inteligente — Parte 2 (jornadas de compra + itens sem venda) implementada e testada; Venda Inteligente — Parte 1 (motor de detecção de produtos comprados juntos) implementada e testada; Fase 11 — Parte 1 (Dashboard geral de relacionamento) implementada e testada; Fase 10 — Parte 3 (ações de tratamento de NPS) implementada e testada, Fase 10 concluída; alerta de nota baixa por WhatsApp ao Administrador implementado e testado; Parte 2 (tela de gestão de NPS) implementada e testada; Parte 1 (captura de resposta de NPS) implementada e testada; Fase 9 (Caixa de entrada, atendimento e encaminhamento de lead) implementada e testada, Fase 9 concluída; Fase 8 — Parte 5 (Campanhas) implementada e testada, Fase 8 concluída; Parte 4 (Cross-sell) implementada e testada; Parte 1 (Templates) implementada e testada; validação da Fase 7 em ambiente real
+**Atualizado por:** conexão real com o Uniplus configurada e validada em ambiente de desenvolvimento; Venda Inteligente — Parte 3 (card no Dashboard + tela dedicada) implementada e testada; Fase 11 — Parte 2 (Desempenho por campanha) implementada e testada; Venda Inteligente — Parte 2 (jornadas de compra + itens sem venda) implementada e testada; Venda Inteligente — Parte 1 (motor de detecção de produtos comprados juntos) implementada e testada; Fase 11 — Parte 1 (Dashboard geral de relacionamento) implementada e testada; Fase 10 — Parte 3 (ações de tratamento de NPS) implementada e testada, Fase 10 concluída; alerta de nota baixa por WhatsApp ao Administrador implementado e testado; Parte 2 (tela de gestão de NPS) implementada e testada; Parte 1 (captura de resposta de NPS) implementada e testada; Fase 9 (Caixa de entrada, atendimento e encaminhamento de lead) implementada e testada, Fase 9 concluída; Fase 8 — Parte 5 (Campanhas) implementada e testada, Fase 8 concluída; Parte 4 (Cross-sell) implementada e testada; Parte 1 (Templates) implementada e testada; validação da Fase 7 em ambiente real
+
+## Conexão real com o Uniplus configurada e validada — 14/08/2026
+
+**Pendência de ambiente aberta desde a Fase 4** (nunca testada de ponta a
+ponta contra o banco real — só com mocks, ver seção "Validação da Fase 7
+em ambiente real" abaixo) — **finalmente resolvida.** O responsável do
+projeto informou os dados reais de conexão (banco na rede local, mesma
+LAN deste ambiente de desenvolvimento); `backend/app/config/settings.js`
+(arquivo local, fora do Git) atualizado com `uniplusDatabase`
+(host/porta/banco/usuário/senha) e `uniplus.filialId`.
+
+**Diagnóstico do processo:** a primeira tentativa (senha informada
+inicialmente) retornou `password authentication failed` — servidor
+alcançável, credencial errada. O responsável corrigiu a senha (um dígito
+a mais) e a segunda tentativa bateu um timeout pontual (`connection
+timeout`, 2s configurados em `connection.js`) — confirmado com um teste
+direto (`pg` puro, timeout maior) que foi só um soluço passageiro: conexão
+real em 53ms. Terceira tentativa (via `runSync` real) teve sucesso completo.
+
+**Resultado da primeira sincronização real:**
+- 3.671 clientes, 12 vendedores, 11.296 produtos, 8.561 vendas (todas
+  novas), 16.444 itens de venda, 3.214 snapshots de estoque, 632
+  agregados de cliente. Status `success`, confirmado também na tela de
+  Status de Sincronização já existente (Fase 4).
+- Único aviso (não bloqueia, não relacionado ao Uniplus): validação de
+  números de WhatsApp pulada nesta execução — sessão do WhatsApp deste
+  ambiente não está pareada agora (precisa escanear QR Code de novo);
+  adiada automaticamente para a próxima execução do job.
+- `rfm_status: pending_configuration` — critérios RFM ainda não
+  configurados pelo Administrador (pendência já conhecida, sem relação
+  com o Uniplus).
+
+**Mudança real no ambiente:** o banco do CRM Live deste ambiente de
+desenvolvimento deixou de ter só dados de demonstração (poucos clientes/
+produtos fictícios usados nos testes das fases anteriores) e passou a
+ter os dados reais e volumosos da loja. Testes futuros que inserem dado
+de teste temporário devem redobrar o cuidado de limpeza — o volume real
+torna mais fácil um resíduo de teste passar despercebido.
+
+**Pendência remanescente:** sessão do WhatsApp Web deste ambiente
+precisa ser pareada de novo (QR Code) para a validação de números
+funcionar na próxima sincronização e para testes de envio real.
 
 ## Venda Inteligente — Parte 3: Card no Dashboard + tela dedicada — 14/08/2026
 

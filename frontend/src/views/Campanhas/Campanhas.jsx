@@ -24,7 +24,7 @@ import {
   FormControlLabel,
   Divider,
 } from '@mui/material';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 
 // Tela de Campanhas manuais (FSD seções 6.4, 12.6, 13.6) — última parte da
@@ -107,6 +107,7 @@ function formatDateTime(timestamp) {
 
 export default function Campanhas() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { logout } = useAuth();
 
   const [campaigns, setCampaigns] = useState([]);
@@ -126,6 +127,11 @@ export default function Campanhas() {
 
   const [formPreview, setFormPreview] = useState(null);
   const [formPreviewLoading, setFormPreviewLoading] = useState(false);
+
+  // Produtos selecionados na Venda Inteligente quando a campanha foi criada
+  // de lá — exibidos como lembrete no formulário (a mensagem em si continua
+  // vindo do modelo de mensagem, como em qualquer campanha).
+  const [smartSalesProducts, setSmartSalesProducts] = useState([]);
 
   const [sendDialog, setSendDialog] = useState(null); // { campaign, preview, loading }
   const [cancelDialog, setCancelDialog] = useState(null);
@@ -197,6 +203,23 @@ export default function Campanhas() {
     loadPickerData();
   }, [loadPickerData]);
 
+  // Vindo da Venda Inteligente ("Criar campanha" com itens selecionados):
+  // abre o diálogo de criação com o nome pré-preenchido e guarda a lista de
+  // produtos para exibir como lembrete no formulário. O state é limpo da
+  // história para o diálogo não reabrir num refresh/voltar.
+  useEffect(() => {
+    const prefill = location.state?.smartSalesCampaign;
+    if (!prefill) return;
+    setEditingCampaign(null);
+    setForm({ ...emptyForm, name: prefill.name || '' });
+    setSmartSalesProducts(prefill.productNames || []);
+    setFormPreview(null);
+    setFormError(null);
+    setFormOpen(true);
+    navigate(location.pathname, { replace: true, state: null });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   async function previewBySegmentId(segmentId) {
     if (!segmentId) {
       setFormPreview(null);
@@ -260,6 +283,7 @@ export default function Campanhas() {
     setForm(emptyForm);
     setFormPreview(null);
     setFormError(null);
+    setSmartSalesProducts([]);
   }
 
   function handleSegmentChange(segmentId) {
@@ -519,6 +543,13 @@ export default function Campanhas() {
           {formError && (
             <Alert severity="error" sx={{ marginBottom: 2, marginTop: 1 }}>
               {formError}
+            </Alert>
+          )}
+
+          {smartSalesProducts.length > 0 && (
+            <Alert severity="info" sx={{ marginTop: 1 }}>
+              Campanha iniciada a partir da Venda Inteligente com {smartSalesProducts.length} produto(s):{' '}
+              {smartSalesProducts.join(', ')}. Cite-os no modelo de mensagem escolhido.
             </Alert>
           )}
 

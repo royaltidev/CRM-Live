@@ -28,6 +28,7 @@ const productsController = require('./controllers/products.controller');
 const complementaryProductsController = require('./controllers/complementary-products.controller');
 const campaignsController = require('./controllers/campaigns.controller');
 const settingsController = require('./controllers/settings.controller');
+const uniplusConnectionSettingsService = require('./services/uniplus-connection-settings.service');
 const inboxController = require('./controllers/inbox.controller');
 const inboxService = require('./services/inbox.service');
 const npsController = require('./controllers/nps.controller');
@@ -254,6 +255,8 @@ app.put(
 );
 app.get('/settings/smart-sales-ai', requireAuth, requireAdmin, settingsController.getSmartSalesAiSettings);
 app.put('/settings/smart-sales-ai', requireAuth, requireAdmin, settingsController.updateSmartSalesAiSettings);
+app.get('/settings/uniplus-connection', requireAuth, requireAdmin, settingsController.getUniplusConnectionSettings);
+app.put('/settings/uniplus-connection', requireAuth, requireAdmin, settingsController.updateUniplusConnectionSettings);
 
 // ===== Tratamento de Erros Genérico =====
 
@@ -266,7 +269,7 @@ app.use((err, req, res, next) => {
 
 // ===== Inicializar servidor =====
 
-app.listen(settings.port, () => {
+app.listen(settings.port, async () => {
   console.log(`✓ CRM Live backend rodando na porta ${settings.port}`);
   console.log(`  Health check: GET http://localhost:${settings.port}/health`);
   console.log(`  Callback OAuth: POST http://localhost:${settings.port}/auth/google/callback`);
@@ -295,6 +298,21 @@ app.listen(settings.port, () => {
   // (a cada 60s). Fica "pausado" (sem processar nada) até o Administrador
   // configurar a cadência de disparo em system_settings (chave message_cadence).
   startMessageQueueJob();
+
+  // Aplica a conexão com o Uniplus salva em system_settings (tela de
+  // Configurações, "Trocar Servidor" — escopo novo, 14/08/2026), se o
+  // Admin já tiver configurado uma; caso contrário, mantém o pool inicial
+  // montado a partir de settings.js. Precisa rodar ANTES do job de
+  // sincronização, senão a primeira execução usaria a conexão errada até
+  // a próxima troca.
+  try {
+    const result = await uniplusConnectionSettingsService.initFromStoredSettings();
+    if (result.applied) {
+      console.log('[uniplus] Conexão salva em Configurações aplicada (sobrepõe settings.js).');
+    }
+  } catch (err) {
+    console.error('[uniplus] Falha ao aplicar conexão salva em Configurações, mantendo settings.js:', err.message);
+  }
 
   // Inicia a sincronização periódica com o Uniplus (a cada
   // settings.uniplus.syncIntervalMinutes). Não bloqueia o boot do servidor

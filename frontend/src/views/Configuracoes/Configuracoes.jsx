@@ -13,6 +13,11 @@ import {
   TextField,
   Snackbar,
   Divider,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Chip,
 } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
@@ -39,6 +44,13 @@ export default function Configuracoes() {
 
   const [smartSalesAiEnabled, setSmartSalesAiEnabled] = useState(true);
   const [smartSalesSaving, setSmartSalesSaving] = useState(false);
+
+  const [uniplusConnection, setUniplusConnection] = useState(null);
+  const [uniplusLoading, setUniplusLoading] = useState(true);
+  const [uniplusDialogOpen, setUniplusDialogOpen] = useState(false);
+  const [uniplusForm, setUniplusForm] = useState({ host: '', port: '', database: '', user: '', password: '', filialId: '' });
+  const [uniplusSaving, setUniplusSaving] = useState(false);
+  const [uniplusError, setUniplusError] = useState(null);
 
   const handleAuthFailure = useCallback(
     async (response) => {
@@ -89,6 +101,66 @@ export default function Configuracoes() {
     }
   }, [handleAuthFailure]);
 
+  const loadUniplusConnection = useCallback(async () => {
+    try {
+      setUniplusLoading(true);
+      const response = await fetch('/settings/uniplus-connection', { method: 'GET', credentials: 'include' });
+      if (await handleAuthFailure(response)) return;
+      if (!response.ok) throw new Error('Falha ao carregar dados de conexão com o Uniplus.');
+      const data = await response.json();
+      setUniplusConnection(data);
+    } catch (err) {
+      setSnackbar({ severity: 'error', message: err.message || 'Erro ao carregar conexão com o Uniplus.' });
+    } finally {
+      setUniplusLoading(false);
+    }
+  }, [handleAuthFailure]);
+
+  function openUniplusDialog() {
+    setUniplusForm({
+      host: uniplusConnection?.host || '',
+      port: uniplusConnection?.port || '',
+      database: uniplusConnection?.database || '',
+      user: uniplusConnection?.user || '',
+      password: '',
+      filialId: uniplusConnection?.filialId || '',
+    });
+    setUniplusError(null);
+    setUniplusDialogOpen(true);
+  }
+
+  async function handleSaveUniplusConnection() {
+    try {
+      setUniplusSaving(true);
+      setUniplusError(null);
+
+      const body = { ...uniplusForm };
+      if (!body.password) delete body.password; // em branco = mantém a senha atual
+
+      const response = await fetch('/settings/uniplus-connection', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(body),
+      });
+
+      if (await handleAuthFailure(response)) return;
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Não foi possível salvar a conexão.');
+      }
+
+      setUniplusConnection(data);
+      setSnackbar({ severity: 'success', message: 'Servidor trocado e conexão confirmada com sucesso.' });
+      setUniplusDialogOpen(false);
+    } catch (err) {
+      setUniplusError(err.message || 'Erro ao salvar a conexão.');
+    } finally {
+      setUniplusSaving(false);
+    }
+  }
+
   async function handleToggleSmartSalesAi(checked) {
     try {
       setSmartSalesSaving(true);
@@ -115,6 +187,10 @@ export default function Configuracoes() {
   useEffect(() => {
     loadSettings();
   }, [loadSettings]);
+
+  useEffect(() => {
+    loadUniplusConnection();
+  }, [loadUniplusConnection]);
 
   async function handleSave() {
     try {
@@ -276,6 +352,153 @@ export default function Configuracoes() {
           />
         </Card>
       )}
+
+      <Card sx={{ padding: 3, marginTop: 3 }}>
+        <Typography variant="h6" sx={{ marginBottom: 1 }}>
+          Conexão com o Uniplus
+        </Typography>
+        <Typography variant="body2" sx={{ color: '#666666', marginBottom: 2 }}>
+          Dados do servidor Uniplus usados pela sincronização (FSD 6.9). Trocar aqui aplica
+          imediatamente, sem precisar reiniciar o sistema.
+        </Typography>
+
+        {uniplusLoading ? (
+          <CircularProgress size={20} />
+        ) : (
+          uniplusConnection && (
+            <>
+              <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap', marginBottom: 2 }}>
+                <Box>
+                  <Typography variant="caption" sx={{ color: '#666666' }}>
+                    Host
+                  </Typography>
+                  <Typography variant="body2">{uniplusConnection.host}</Typography>
+                </Box>
+                <Box>
+                  <Typography variant="caption" sx={{ color: '#666666' }}>
+                    Porta
+                  </Typography>
+                  <Typography variant="body2">{uniplusConnection.port}</Typography>
+                </Box>
+                <Box>
+                  <Typography variant="caption" sx={{ color: '#666666' }}>
+                    Banco
+                  </Typography>
+                  <Typography variant="body2">{uniplusConnection.database}</Typography>
+                </Box>
+                <Box>
+                  <Typography variant="caption" sx={{ color: '#666666' }}>
+                    Usuário
+                  </Typography>
+                  <Typography variant="body2">{uniplusConnection.user}</Typography>
+                </Box>
+                <Box>
+                  <Typography variant="caption" sx={{ color: '#666666' }}>
+                    Id da filial
+                  </Typography>
+                  <Typography variant="body2">{uniplusConnection.filialId}</Typography>
+                </Box>
+                <Box>
+                  <Typography variant="caption" sx={{ color: '#666666' }}>
+                    Senha
+                  </Typography>
+                  <Typography variant="body2">{uniplusConnection.hasPassword ? '••••••••' : 'Não configurada'}</Typography>
+                </Box>
+              </Box>
+              <Chip
+                label={uniplusConnection.source === 'database' ? 'Configurado nesta tela' : 'Ainda usando settings.js (nunca trocado)'}
+                size="small"
+                color={uniplusConnection.source === 'database' ? 'success' : 'default'}
+                sx={{ marginBottom: 2 }}
+              />
+              <Box>
+                <Button variant="outlined" onClick={openUniplusDialog}>
+                  Trocar Servidor
+                </Button>
+              </Box>
+            </>
+          )
+        )}
+      </Card>
+
+      {/* Diálogo "Trocar Servidor" */}
+      <Dialog open={uniplusDialogOpen} onClose={() => !uniplusSaving && setUniplusDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Trocar Servidor do Uniplus</DialogTitle>
+        <DialogContent>
+          {uniplusError && (
+            <Alert severity="error" sx={{ marginBottom: 2, marginTop: 1 }}>
+              {uniplusError}
+            </Alert>
+          )}
+          <Alert severity="info" sx={{ marginBottom: 2, marginTop: uniplusError ? 0 : 1 }}>
+            Os dados só são salvos e aplicados se a conexão for testada com sucesso primeiro — uma
+            tentativa com dado errado nunca derruba a conexão atual.
+          </Alert>
+
+          <TextField
+            label="Host"
+            fullWidth
+            required
+            margin="normal"
+            value={uniplusForm.host}
+            onChange={(e) => setUniplusForm({ ...uniplusForm, host: e.target.value })}
+          />
+          <Box sx={{ display: 'flex', gap: 2 }}>
+            <TextField
+              label="Porta"
+              type="number"
+              fullWidth
+              required
+              margin="normal"
+              value={uniplusForm.port}
+              onChange={(e) => setUniplusForm({ ...uniplusForm, port: e.target.value })}
+            />
+            <TextField
+              label="Id da filial"
+              type="number"
+              fullWidth
+              required
+              margin="normal"
+              value={uniplusForm.filialId}
+              onChange={(e) => setUniplusForm({ ...uniplusForm, filialId: e.target.value })}
+            />
+          </Box>
+          <TextField
+            label="Banco de dados"
+            fullWidth
+            required
+            margin="normal"
+            value={uniplusForm.database}
+            onChange={(e) => setUniplusForm({ ...uniplusForm, database: e.target.value })}
+          />
+          <TextField
+            label="Usuário"
+            fullWidth
+            required
+            margin="normal"
+            value={uniplusForm.user}
+            onChange={(e) => setUniplusForm({ ...uniplusForm, user: e.target.value })}
+          />
+          <TextField
+            label="Senha"
+            type="password"
+            fullWidth
+            margin="normal"
+            value={uniplusForm.password}
+            onChange={(e) => setUniplusForm({ ...uniplusForm, password: e.target.value })}
+            placeholder="Deixe em branco para manter a senha atual"
+            autoComplete="new-password"
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setUniplusDialogOpen(false)} disabled={uniplusSaving}>
+            Cancelar
+          </Button>
+          <Button variant="contained" onClick={handleSaveUniplusConnection} disabled={uniplusSaving}>
+            {uniplusSaving ? 'Salvando e testando...' : 'Salvar e testar conexão'}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Snackbar
         open={!!snackbar}

@@ -1,7 +1,106 @@
 # Status do Projeto — CRM Live
 
 **Última atualização:** 14/08/2026
-**Atualizado por:** conexão real com o Uniplus configurada e validada em ambiente de desenvolvimento; Venda Inteligente — Parte 3 (card no Dashboard + tela dedicada) implementada e testada; Fase 11 — Parte 2 (Desempenho por campanha) implementada e testada; Venda Inteligente — Parte 2 (jornadas de compra + itens sem venda) implementada e testada; Venda Inteligente — Parte 1 (motor de detecção de produtos comprados juntos) implementada e testada; Fase 11 — Parte 1 (Dashboard geral de relacionamento) implementada e testada; Fase 10 — Parte 3 (ações de tratamento de NPS) implementada e testada, Fase 10 concluída; alerta de nota baixa por WhatsApp ao Administrador implementado e testado; Parte 2 (tela de gestão de NPS) implementada e testada; Parte 1 (captura de resposta de NPS) implementada e testada; Fase 9 (Caixa de entrada, atendimento e encaminhamento de lead) implementada e testada, Fase 9 concluída; Fase 8 — Parte 5 (Campanhas) implementada e testada, Fase 8 concluída; Parte 4 (Cross-sell) implementada e testada; Parte 1 (Templates) implementada e testada; validação da Fase 7 em ambiente real
+**Atualizado por:** conexão com o Uniplus editável pelo Administrador (tela de Configurações, "Trocar Servidor") implementada e testada; conexão real com o Uniplus configurada e validada em ambiente de desenvolvimento; Venda Inteligente — Parte 3 (card no Dashboard + tela dedicada) implementada e testada; Fase 11 — Parte 2 (Desempenho por campanha) implementada e testada; Venda Inteligente — Parte 2 (jornadas de compra + itens sem venda) implementada e testada; Venda Inteligente — Parte 1 (motor de detecção de produtos comprados juntos) implementada e testada; Fase 11 — Parte 1 (Dashboard geral de relacionamento) implementada e testada; Fase 10 — Parte 3 (ações de tratamento de NPS) implementada e testada, Fase 10 concluída; alerta de nota baixa por WhatsApp ao Administrador implementado e testado; Parte 2 (tela de gestão de NPS) implementada e testada; Parte 1 (captura de resposta de NPS) implementada e testada; Fase 9 (Caixa de entrada, atendimento e encaminhamento de lead) implementada e testada, Fase 9 concluída; Fase 8 — Parte 5 (Campanhas) implementada e testada, Fase 8 concluída; Parte 4 (Cross-sell) implementada e testada; Parte 1 (Templates) implementada e testada; validação da Fase 7 em ambiente real
+
+## Conexão com o Uniplus editável pelo Administrador ("Trocar Servidor") — 14/08/2026
+
+**Pedido do responsável do projeto:** os dados de conexão com o Uniplus
+não deviam mais depender de editar `settings.js` (arquivo local) e
+reiniciar o backend — o Administrador precisa poder trocar host, porta,
+banco, usuário, senha e id da filial direto pela tela de Configurações,
+sempre que precisar. Com cuidado explícito pedido pelo responsável quanto
+à segurança da senha.
+
+### Decisões de design
+
+- **Onde guardar:** `system_settings` (chave `uniplus_connection`), mesmo
+  padrão já usado pra todo parâmetro administrável do sistema
+  (`rfm_criteria`, `cross_sell_discount_percent` etc.) — Admin-exclusivo
+  (`requireAdmin`), diferente dos outros parâmetros dessa tabela que
+  também liberam Acesso Limitado em alguns casos. `settings.js` continua
+  como FALLBACK: enquanto o Admin nunca usou "Trocar Servidor", a conexão
+  ativa é a do arquivo (como sempre foi); a partir do primeiro
+  salvamento, `system_settings` vira a fonte de verdade — o boot do
+  backend aplica ela por cima do arquivo (`initFromStoredSettings`,
+  chamado em `main.js` antes do job de sincronização iniciar).
+- **Cuidados de segurança com a senha (pedido explícito do responsável):**
+  - A senha NUNCA é devolvida em nenhuma resposta da API — `GET
+    /settings/uniplus-connection` só informa `hasPassword: true/false`,
+    nunca o valor. O campo "Senha" no formulário de edição começa
+    sempre vazio, com a legenda "Deixe em branco para manter a senha
+    atual" — editar só host/porta/etc. não obriga a redigitar a senha.
+  - Campo de senha com `type="password"` (mascarado) no formulário,
+    `autoComplete="new-password"` (evita autofill indevido do navegador).
+  - `settings.js` continua fora do Git (já era, sem mudança) —
+    `system_settings` também não é versionado (é dado, não schema);
+    nenhum commit desta funcionalidade contém a senha real.
+- **Testa ANTES de salvar/aplicar, não depois:** a primeira versão
+  implementada salvava e trocava o pool em uso, testando só depois — uma
+  tentativa com dado errado (typo na senha, por exemplo) derrubaria
+  silenciosamente uma conexão que já estava funcionando. Corrigido antes
+  de entregar: `testUniplusConnectionCandidate` (novo em `connection.js`)
+  testa os dados novos num pool DESCARTÁVEL, isolado; só se o teste passar
+  é que `system_settings` é gravado e o pool em uso é trocado de verdade
+  (`rebuildUniplusPool`). Uma tentativa com senha errada mostra o erro na
+  hora, mantém o diálogo aberto pra correção, e nada muda no sistema.
+- **Troca em tempo real, sem restart:** tecnicamente, o `Pool` do `pg` não
+  permite alterar host/usuário depois de criado — `uniplusPool` (usado
+  pelos 12 pontos de leitura em `uniplus.repository.js`, único consumidor)
+  virou um `Proxy` que sempre encaminha pro pool ATUAL, substituível a
+  qualquer momento por `rebuildUniplusPool`. Nenhum outro arquivo do
+  sistema precisou mudar — `uniplus.repository.js` continua chamando
+  `uniplusPool.query(...)` exatamente como antes.
+- **`filialId`:** `sync.service.js` já lia `settings.uniplus.filialId`
+  direto (não recebia como parâmetro) — em vez de refatorar esse ponto,
+  a atualização MUTA essa propriedade no mesmo objeto `settings` em
+  memória (singleton do `require`), então o valor novo já é visto na
+  próxima sincronização sem precisar tocar em `sync.service.js`.
+
+### Implementação
+
+- `backend/app/database/connection.js` — `uniplusPool` virou um `Proxy`
+  trocável; `rebuildUniplusPool(config)` (substitui o pool em uso,
+  encerra o antigo em segundo plano); `testUniplusConnectionCandidate(config)`
+  (testa sem afetar o pool ativo).
+- `backend/app/services/uniplus-connection-settings.service.js` (novo) —
+  `getForDisplay` (nunca inclui senha), `updateConnection` (testa antes
+  de salvar, mantém a senha atual se omitida), `initFromStoredSettings`
+  (aplicado no boot).
+- `backend/app/controllers/settings.controller.js` +
+  `GET`/`PUT /settings/uniplus-connection` (Admin-exclusivo) — erro de
+  conexão retorna 400 com `connectionTest` embutido, pra tela mostrar o
+  motivo exato da falha.
+- `backend/app/main.js` — `initFromStoredSettings()` chamado no boot,
+  antes do job de sincronização.
+- `frontend/src/views/Configuracoes/Configuracoes.jsx` — card "Conexão
+  com o Uniplus" (host/porta/banco/usuário/filial visíveis, senha sempre
+  mascarada, chip indicando se veio do arquivo ou já foi configurado pela
+  tela) + diálogo "Trocar Servidor".
+
+### Testes realizados
+
+- `node -c` em todos os arquivos alterados; `vite build` completo sem
+  erros.
+- Smoke tests: `GET`/`PUT /settings/uniplus-connection` retornam 401 sem
+  sessão.
+- Testes diretos contra o Postgres real e o Uniplus real: senha errada
+  proposital → rejeitada, `system_settings` continua sem a chave (nada
+  foi salvo), `connectionTest.success === false` com a mensagem real do
+  Postgres; host vazio → rejeitado antes de qualquer tentativa de rede;
+  credenciais corretas → salva, pool ativo trocado (confirmado com uma
+  query real através de `uniplusPool` logo depois), `getForDisplay`
+  passa a retornar `source: 'database'`; segunda edição sem informar
+  senha → reaproveita a senha já salva com sucesso. Reinício do backend
+  confirmado aplicando a conexão salva (log `[uniplus] Conexão salva em
+  Configurações aplicada`), com o job automático de sincronização já
+  rodando `status: "success"` logo em seguida.
+- Teste real de UI (extensão Chrome, sessão Admin): card mostra os dados
+  certos com a senha mascarada; diálogo "Trocar Servidor" abre
+  pré-preenchido (senha vazia); tentativa com senha errada mostra o erro
+  exato do Postgres, diálogo permanece aberto, nada muda na tela de
+  fundo; corrigindo a senha e salvando de novo — diálogo fecha sozinho,
+  snackbar de sucesso, card atualizado.
 
 ## Conexão real com o Uniplus configurada e validada — 14/08/2026
 

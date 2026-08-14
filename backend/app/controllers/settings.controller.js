@@ -3,6 +3,7 @@
 // Administrador.
 
 const automationSettingsService = require('../services/automation-settings.service');
+const uniplusConnectionSettingsService = require('../services/uniplus-connection-settings.service');
 
 // GET /settings/lead-intent-classification
 async function getLeadIntentClassificationSettings(req, res) {
@@ -75,9 +76,43 @@ async function updateSmartSalesAiSettings(req, res) {
   }
 }
 
+// GET /settings/uniplus-connection ("Trocar Servidor" — escopo novo, ver
+// uniplus-connection-settings.service.js). Nunca devolve a senha.
+async function getUniplusConnectionSettings(req, res) {
+  try {
+    const connection = await uniplusConnectionSettingsService.getForDisplay();
+    res.json(connection);
+  } catch (err) {
+    console.error('Erro ao carregar dados de conexão com o Uniplus:', err.message);
+    res.status(500).json({ error: 'Erro ao carregar dados de conexão com o Uniplus.' });
+  }
+}
+
+// PUT /settings/uniplus-connection { host, port, database, user, password?, filialId }
+// `password` opcional: em branco mantém a senha atual. Aplica em tempo
+// real (sem restart) e testa a conexão nova antes de responder.
+async function updateUniplusConnectionSettings(req, res) {
+  try {
+    const { host, port, database, user, password, filialId } = req.body;
+    const result = await uniplusConnectionSettingsService.updateConnection(
+      { host, port, database, user, password, filialId },
+      req.user.id
+    );
+    res.json(result);
+  } catch (err) {
+    console.error('Erro ao salvar dados de conexão com o Uniplus:', err.message);
+    res.status(400).json({
+      error: err.message || 'Erro ao salvar dados de conexão com o Uniplus.',
+      connectionTest: err.connectionTest || null,
+    });
+  }
+}
+
 module.exports = {
   getLeadIntentClassificationSettings,
   updateLeadIntentClassificationSettings,
   getSmartSalesAiSettings,
   updateSmartSalesAiSettings,
+  getUniplusConnectionSettings,
+  updateUniplusConnectionSettings,
 };

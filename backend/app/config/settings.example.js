@@ -25,6 +25,11 @@ module.exports = {
 
   // Conexão SOMENTE LEITURA com o banco de dados do Uniplus.
   // O CRM Live nunca escreve nesta conexão, em nenhuma hipótese (docs/FSD.md, seção 1).
+  // Usado só como valor INICIAL do pool, no boot: a partir do primeiro uso
+  // da tela de Configurações ("Trocar Servidor", 14/08/2026), a conexão
+  // real fica em `system_settings` (chave uniplus_connection) e pode ser
+  // trocada em tempo real pelo Administrador, sem editar este arquivo nem
+  // reiniciar o backend — ver uniplus-connection-settings.service.js.
   uniplusDatabase: {
     host: 'CHANGE_ME',
     port: 5432,

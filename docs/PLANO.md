@@ -282,7 +282,7 @@ Decisões técnicas tomadas durante a preparação do terreno (07/08/2026), para
 
 **Checklist:**
 - [x] Dashboard geral (taxa de recompra, ticket médio, frequência, ativos x inativos, NPS médio) — Parte 1, 14/08/2026.
-- [ ] Desempenho por campanha.
+- [x] Desempenho por campanha — Parte 2, 14/08/2026 (exportação CSV incluída; PDF fica para a Parte 3).
 - [x] Exportação CSV do dashboard geral — Parte 1, 14/08/2026 (demais relatórios da seção 22 seguem pendentes, ver Parte 4 do plano de execução em docs/STATUS.md).
 - [ ] Exportação PDF (dashboard geral e desempenho de campanha) — biblioteca de geração de PDF no backend.
 - [ ] Índices de banco revisados para as consultas de maior volume (log de disparos, NPS, vendas por período).

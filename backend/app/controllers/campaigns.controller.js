@@ -7,6 +7,88 @@
 
 const campaignsService = require('../services/campaigns.service');
 
+const RECIPIENT_STATUS_LABELS = {
+  sent: 'Enviadas',
+  delivered: 'Entregues',
+  responded: 'Respondidas',
+};
+
+function escapeCsvField(value) {
+  const str = value === null || value === undefined ? '' : String(value);
+  return /[",\n\r]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
+}
+
+// CSV com BOM UTF-8 (compatibilidade com Excel, mesmo padrão de
+// nps.controller.js/reports.controller.js).
+function buildPerformanceReportCsv(campaigns) {
+  const header = [
+    'Campanha',
+    'Status',
+    'Enviada em',
+    ...Object.values(RECIPIENT_STATUS_LABELS),
+    'Vendas atribuídas',
+    'Receita atribuída',
+  ];
+  const lines = [header.map(escapeCsvField).join(',')];
+
+  for (const campaign of campaigns) {
+    const attribution = campaign.results.attribution;
+    lines.push(
+      [
+        campaign.name,
+        campaign.status,
+        campaign.sentAt ? new Date(campaign.sentAt).toISOString() : '',
+        ...Object.keys(RECIPIENT_STATUS_LABELS).map((key) => campaign.results.byStatus[key] ?? 0),
+        attribution ? attribution.attributedSales : 'Não disponível',
+        attribution ? attribution.attributedRevenue.toFixed(2) : 'Não disponível',
+      ]
+        .map(escapeCsvField)
+        .join(',')
+    );
+  }
+
+  return '﻿' + lines.join('\r\n');
+}
+
+// GET /campaigns/performance-report?startDate=&endDate=&campaignId=
+// Relatório consolidado de desempenho de TODAS as campanhas já enviadas
+// (FSD 22.2) — reaproveita campaignsService.getCampaignResults por
+// campanha, mesmo cálculo do "Ver resultado" de uma campanha individual.
+async function getPerformanceReport(req, res) {
+  try {
+    const { startDate, endDate, campaignId } = req.query;
+    const campaigns = await campaignsService.listCampaignPerformance({
+      startDate: startDate || null,
+      endDate: endDate || null,
+      campaignId: campaignId || null,
+    });
+    res.json({ campaigns });
+  } catch (err) {
+    console.error('Erro ao gerar relatório de desempenho de campanhas:', err.message);
+    res.status(500).json({ error: 'Erro ao gerar o relatório de desempenho de campanhas.' });
+  }
+}
+
+// GET /campaigns/performance-report/export — mesmos filtros, formato CSV.
+async function exportPerformanceReport(req, res) {
+  try {
+    const { startDate, endDate, campaignId } = req.query;
+    const campaigns = await campaignsService.listCampaignPerformance({
+      startDate: startDate || null,
+      endDate: endDate || null,
+      campaignId: campaignId || null,
+    });
+    const csv = buildPerformanceReportCsv(campaigns);
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="desempenho-campanhas.csv"');
+    res.send(csv);
+  } catch (err) {
+    console.error('Erro ao exportar relatório de desempenho de campanhas:', err.message);
+    res.status(500).json({ error: 'Erro ao exportar o relatório de desempenho de campanhas.' });
+  }
+}
+
 function handleKnownErrors(err, res) {
   if (err.message === 'Campanha não encontrada.') {
     res.status(404).json({ error: err.message });
@@ -184,4 +266,6 @@ module.exports = {
   deleteCampaign,
   cancelCampaign,
   sendCampaignNow,
+  getPerformanceReport,
+  exportPerformanceReport,
 };

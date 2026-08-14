@@ -204,6 +204,11 @@ app.get('/sales-insights/slow-movers', requireAuth, salesInsightsController.getS
 // Campanhas manuais (FSD 6.4/12.6) — leitura E escrita liberadas a Admin e
 // Acesso Limitado (FSD linha 332 da matriz de permissões).
 app.post('/campaigns/preview-recipients', requireAuth, campaignsController.previewRecipients);
+// IMPORTANTE: '/campaigns/performance-report' precisa vir antes de
+// '/campaigns/:id', senão o Express interpreta "performance-report" como um
+// :id (FSD 22.2 — desempenho consolidado de todas as campanhas).
+app.get('/campaigns/performance-report', requireAuth, campaignsController.getPerformanceReport);
+app.get('/campaigns/performance-report/export', requireAuth, campaignsController.exportPerformanceReport);
 app.get('/campaigns', requireAuth, campaignsController.listCampaigns);
 app.post('/campaigns', requireAuth, campaignsController.createCampaign);
 app.get('/campaigns/:id', requireAuth, campaignsController.getCampaignById);

@@ -506,6 +506,46 @@ async function getCampaignResults(campaignId, campaignRow = null) {
   return { byStatus, attribution };
 }
 
+// Relatório consolidado de desempenho de TODAS as campanhas (FSD 22.2) —
+// reaproveita getCampaignResults (mesmo cálculo usado no "Ver resultado" de
+// UMA campanha, Fase 8) para cada campanha do período, em vez de duplicar a
+// lógica de contagem por status/atribuição de venda. Filtra por
+// `sent_at` (quando a campanha foi REALMENTE enviada, não criada) — só
+// campanhas já enviadas entram no relatório, então `sent_at IS NOT NULL`
+// sempre se aplica, com ou sem filtro de período.
+async function listCampaignPerformance({ startDate = null, endDate = null, campaignId = null } = {}) {
+  const conditions = ['c.sent_at IS NOT NULL'];
+  const params = [];
+
+  if (startDate) {
+    params.push(startDate);
+    conditions.push(`c.sent_at >= $${params.length}`);
+  }
+  if (endDate) {
+    params.push(endDate);
+    conditions.push(`c.sent_at <= $${params.length}::date + INTERVAL '1 day'`);
+  }
+  if (campaignId) {
+    params.push(campaignId);
+    conditions.push(`c.id = $${params.length}`);
+  }
+
+  const where = `WHERE ${conditions.join(' AND ')}`;
+  const result = await crmPool.query(`${BASE_SELECT} ${where} ORDER BY c.sent_at DESC`, params);
+
+  // Uma consulta de resultado por campanha — aceitável para o volume atual
+  // do projeto (dezenas de campanhas enviadas, não milhares); se o volume
+  // crescer muito, isso pode virar uma agregação SQL única no futuro.
+  const rows = [];
+  for (const row of result.rows) {
+    const campaign = mapCampaignRow(row);
+    const results = await getCampaignResults(campaign.id, row);
+    rows.push({ ...campaign, results });
+  }
+
+  return rows;
+}
+
 // Hook chamado por automation-trigger.service.js#processNewSale para TODA
 // venda nova. Marca como usado o cupom/giftback da campanha mais recente
 // (dentro do período de atribuição) da qual o cliente foi destinatário
@@ -586,5 +626,6 @@ module.exports = {
   sendCampaignNow,
   dispatchDueCampaigns,
   getCampaignResults,
+  listCampaignPerformance,
   attributeSaleToCampaigns,
 };

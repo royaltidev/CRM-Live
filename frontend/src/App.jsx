@@ -24,6 +24,7 @@ import Cupons from './views/Cupons/Cupons';
 import Giftback from './views/Giftback/Giftback';
 import CrossSell from './views/CrossSell/CrossSell';
 import Campanhas from './views/Campanhas/Campanhas';
+import DesempenhoCampanhas from './views/DesempenhoCampanhas/DesempenhoCampanhas';
 import Configuracoes from './views/Configuracoes/Configuracoes';
 import CaixaEntrada from './views/CaixaEntrada/CaixaEntrada';
 import NPS from './views/NPS/NPS';
@@ -104,6 +105,8 @@ function AppContent() {
         <Route path="/cross-sell" element={<CrossSell />} />
 
         <Route path="/campanhas" element={<Campanhas />} />
+
+        <Route path="/desempenho-campanhas" element={<DesempenhoCampanhas />} />
 
         <Route path="/vendedores" element={<Vendedores />} />
 

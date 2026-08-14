@@ -15,15 +15,21 @@ import {
   Typography,
   MenuItem,
   Chip,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Divider,
+  Snackbar,
 } from '@mui/material';
 import DownloadOutlinedIcon from '@mui/icons-material/DownloadOutlined';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 
 // Tela de gestão de satisfação / NPS (FSD 6.8, 12.12, 22.6).
-// Leitura disponível a Admin e Acesso Limitado; ações sobre a nota
-// (mensagem padronizada, desconto/voucher, histórico de tratamento) ficam
-// para a Parte 3 do backend/services/nps.service.js.
+// Leitura disponível a Admin e Acesso Limitado; ações de tratamento
+// (mensagem padronizada, desconto/voucher via giftback, outra ação) são
+// exclusivas do Administrador (FSD 13.9) — ver backend/services/nps.service.js.
 
 const BAND_OPTIONS = [
   { value: '', label: 'Todas as faixas' },
@@ -31,6 +37,27 @@ const BAND_OPTIONS = [
   { value: 'neutral', label: 'Neutro (7–8)' },
   { value: 'promoter', label: 'Promotor (9–10)' },
 ];
+
+const ACTION_TYPE_OPTIONS = [
+  { value: 'message', label: 'Mensagem padronizada' },
+  { value: 'discount', label: 'Desconto (giftback)' },
+  { value: 'voucher', label: 'Voucher (giftback)' },
+  { value: 'other', label: 'Outra ação' },
+];
+
+const CREDIT_TYPE_OPTIONS = [
+  { value: 'percent', label: 'Percentual' },
+  { value: 'value', label: 'Valor fixo' },
+];
+
+const TREATMENT_ACTION_LABELS = {
+  message: 'Mensagem padronizada',
+  discount: 'Desconto (giftback)',
+  voucher: 'Voucher (giftback)',
+  other: 'Outra ação',
+};
+
+const TREATABLE_STATUSES = ['low_score_open', 'low_score_treated'];
 
 const STATUS_LABELS = {
   pending: 'Aguardando resposta',
@@ -55,7 +82,7 @@ function scoreColor(score) {
 
 export default function NPS() {
   const navigate = useNavigate();
-  const { logout } = useAuth();
+  const { logout, isAdmin } = useAuth();
 
   const [scoreBand, setScoreBand] = useState('');
   const [dateFrom, setDateFrom] = useState('');
@@ -65,12 +92,27 @@ export default function NPS() {
 
   const [sellers, setSellers] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [templates, setTemplates] = useState([]);
 
   const [responses, setResponses] = useState([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+
+  const [treatDialogRow, setTreatDialogRow] = useState(null);
+  const [treatmentHistory, setTreatmentHistory] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [actionType, setActionType] = useState('message');
+  const [templateId, setTemplateId] = useState('');
+  const [creditType, setCreditType] = useState('percent');
+  const [creditAmount, setCreditAmount] = useState('');
+  const [validUntil, setValidUntil] = useState('');
+  const [treatmentDescription, setTreatmentDescription] = useState('');
+  const [treatmentResult, setTreatmentResult] = useState('');
+  const [treatSaving, setTreatSaving] = useState(false);
+  const [treatError, setTreatError] = useState(null);
+  const [successMessage, setSuccessMessage] = useState(null);
 
   const pageSize = 50;
 
@@ -86,10 +128,15 @@ export default function NPS() {
 
   const loadFilterOptions = useCallback(async () => {
     try {
-      const [sellersRes, categoriesRes] = await Promise.all([
+      const requests = [
         fetch('/sellers', { credentials: 'include' }),
         fetch('/products/categories', { credentials: 'include' }),
-      ]);
+      ];
+      if (isAdmin) {
+        requests.push(fetch('/templates', { credentials: 'include' }));
+      }
+
+      const [sellersRes, categoriesRes, templatesRes] = await Promise.all(requests);
 
       if (sellersRes.ok) {
         const data = await sellersRes.json();
@@ -99,10 +146,14 @@ export default function NPS() {
         const data = await categoriesRes.json();
         setCategories(data.categories || []);
       }
+      if (templatesRes && templatesRes.ok) {
+        const data = await templatesRes.json();
+        setTemplates(data.templates || []);
+      }
     } catch {
-      // Filtros de apoio não são essenciais — a listagem funciona sem eles.
+      // Filtros/opções de apoio não são essenciais — a listagem funciona sem eles.
     }
-  }, []);
+  }, [isAdmin]);
 
   const loadResponses = useCallback(async () => {
     try {
@@ -189,6 +240,80 @@ export default function NPS() {
   const formatDateTime = (dateString) => {
     if (!dateString) return '—';
     return new Date(dateString).toLocaleString('pt-BR');
+  };
+
+  const loadTreatmentHistory = useCallback(async (npsResponseId) => {
+    try {
+      setHistoryLoading(true);
+      const response = await fetch(`/nps/responses/${npsResponseId}/treatments`, { credentials: 'include' });
+      if (!response.ok) throw new Error();
+      const data = await response.json();
+      setTreatmentHistory(data.treatments || []);
+    } catch {
+      setTreatmentHistory([]);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, []);
+
+  const openTreatDialog = (row) => {
+    setTreatDialogRow(row);
+    setActionType('message');
+    setTemplateId('');
+    setCreditType('percent');
+    setCreditAmount('');
+    setValidUntil('');
+    setTreatmentDescription('');
+    setTreatmentResult('');
+    setTreatError(null);
+    loadTreatmentHistory(row.id);
+  };
+
+  const closeTreatDialog = () => {
+    setTreatDialogRow(null);
+  };
+
+  const submitTreatment = async () => {
+    try {
+      setTreatSaving(true);
+      setTreatError(null);
+
+      const body = { actionType };
+      if (actionType === 'message') {
+        body.templateId = templateId;
+      } else if (actionType === 'discount' || actionType === 'voucher') {
+        if (creditType === 'percent') {
+          body.creditPercent = creditAmount;
+        } else {
+          body.creditValue = creditAmount;
+        }
+        if (validUntil) body.validUntil = validUntil;
+      } else if (actionType === 'other') {
+        body.description = treatmentDescription;
+        body.resultText = treatmentResult;
+      }
+
+      const response = await fetch(`/nps/responses/${treatDialogRow.id}/treatments`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Falha ao registrar o tratamento');
+      }
+
+      setSuccessMessage(`Ação registrada: ${data.treatment.result}`);
+      await loadTreatmentHistory(treatDialogRow.id);
+      await loadResponses();
+      closeTreatDialog();
+    } catch (err) {
+      setTreatError(err.message || 'Erro ao registrar o tratamento');
+    } finally {
+      setTreatSaving(false);
+    }
   };
 
   return (
@@ -304,6 +429,7 @@ export default function NPS() {
                   <TableCell sx={{ fontWeight: 700 }}>Produto/Categoria</TableCell>
                   <TableCell sx={{ fontWeight: 700 }}>Vendedor</TableCell>
                   <TableCell sx={{ fontWeight: 700 }}>Status</TableCell>
+                  {isAdmin && <TableCell sx={{ fontWeight: 700 }}>Ações</TableCell>}
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -327,6 +453,15 @@ export default function NPS() {
                     <TableCell>
                       <Chip label={STATUS_LABELS[row.status] || row.status} color={STATUS_COLORS[row.status] || 'default'} size="small" />
                     </TableCell>
+                    {isAdmin && (
+                      <TableCell>
+                        {TREATABLE_STATUSES.includes(row.status) && (
+                          <Button size="small" variant="outlined" onClick={() => openTreatDialog(row)}>
+                            Tratar
+                          </Button>
+                        )}
+                      </TableCell>
+                    )}
                   </TableRow>
                 ))}
               </TableBody>
@@ -348,6 +483,162 @@ export default function NPS() {
           </Button>
         </Box>
       )}
+
+      {/* Diálogo de tratamento de nota baixa (FSD 13.9, exclusivo do Admin) */}
+      <Dialog open={Boolean(treatDialogRow)} onClose={closeTreatDialog} maxWidth="sm" fullWidth>
+        <DialogTitle>
+          Tratar nota de {treatDialogRow?.customer_name} ({treatDialogRow?.score}/10)
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="subtitle2" sx={{ marginTop: 1, marginBottom: 1 }}>
+            Histórico de tratamento
+          </Typography>
+          {historyLoading ? (
+            <CircularProgress size={20} />
+          ) : treatmentHistory.length === 0 ? (
+            <Typography variant="body2" sx={{ color: '#666666', marginBottom: 2 }}>
+              Nenhuma ação registrada ainda.
+            </Typography>
+          ) : (
+            <Box sx={{ marginBottom: 2 }}>
+              {treatmentHistory.map((t) => (
+                <Box key={t.id} sx={{ marginBottom: 1, paddingBottom: 1, borderBottom: '1px solid #eee' }}>
+                  <Typography variant="body2">
+                    <strong>{TREATMENT_ACTION_LABELS[t.action_type] || t.action_type}</strong> — {t.description}
+                  </Typography>
+                  <Typography variant="caption" sx={{ color: '#666666' }}>
+                    {t.result} · {t.performed_by_name || t.performed_by_email} em {formatDateTime(t.created_at)}
+                  </Typography>
+                </Box>
+              ))}
+            </Box>
+          )}
+
+          <Divider sx={{ marginBottom: 2 }} />
+
+          <Typography variant="subtitle2" sx={{ marginBottom: 1 }}>
+            Nova ação
+          </Typography>
+
+          {treatError && (
+            <Alert severity="error" sx={{ marginBottom: 2 }}>
+              {treatError}
+            </Alert>
+          )}
+
+          <TextField
+            select
+            label="Tipo de ação"
+            fullWidth
+            margin="normal"
+            value={actionType}
+            onChange={(e) => setActionType(e.target.value)}
+          >
+            {ACTION_TYPE_OPTIONS.map((opt) => (
+              <MenuItem key={opt.value} value={opt.value}>
+                {opt.label}
+              </MenuItem>
+            ))}
+          </TextField>
+
+          {actionType === 'message' && (
+            <TextField
+              select
+              label="Modelo de mensagem"
+              fullWidth
+              required
+              margin="normal"
+              value={templateId}
+              onChange={(e) => setTemplateId(e.target.value)}
+            >
+              {templates.map((t) => (
+                <MenuItem key={t.id} value={t.id}>
+                  {t.name}
+                </MenuItem>
+              ))}
+            </TextField>
+          )}
+
+          {(actionType === 'discount' || actionType === 'voucher') && (
+            <>
+              <Box sx={{ display: 'flex', gap: 2 }}>
+                <TextField
+                  select
+                  label="Tipo de crédito"
+                  fullWidth
+                  required
+                  margin="normal"
+                  value={creditType}
+                  onChange={(e) => setCreditType(e.target.value)}
+                >
+                  {CREDIT_TYPE_OPTIONS.map((opt) => (
+                    <MenuItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </MenuItem>
+                  ))}
+                </TextField>
+                <TextField
+                  label={creditType === 'percent' ? 'Percentual (%)' : 'Valor (R$)'}
+                  type="number"
+                  fullWidth
+                  required
+                  margin="normal"
+                  value={creditAmount}
+                  onChange={(e) => setCreditAmount(e.target.value)}
+                />
+              </Box>
+              <TextField
+                label="Válido até (opcional)"
+                type="date"
+                fullWidth
+                margin="normal"
+                value={validUntil}
+                onChange={(e) => setValidUntil(e.target.value)}
+                InputLabelProps={{ shrink: true }}
+              />
+            </>
+          )}
+
+          {actionType === 'other' && (
+            <>
+              <TextField
+                label="Descreva a ação realizada"
+                fullWidth
+                required
+                multiline
+                minRows={2}
+                margin="normal"
+                value={treatmentDescription}
+                onChange={(e) => setTreatmentDescription(e.target.value)}
+              />
+              <TextField
+                label="Resultado (opcional)"
+                fullWidth
+                multiline
+                minRows={2}
+                margin="normal"
+                value={treatmentResult}
+                onChange={(e) => setTreatmentResult(e.target.value)}
+              />
+            </>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeTreatDialog} disabled={treatSaving}>
+            Cancelar
+          </Button>
+          <Button onClick={submitTreatment} variant="contained" disabled={treatSaving}>
+            Registrar
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Snackbar
+        open={Boolean(successMessage)}
+        autoHideDuration={5000}
+        onClose={() => setSuccessMessage(null)}
+        message={successMessage}
+      />
     </Container>
   );
 }

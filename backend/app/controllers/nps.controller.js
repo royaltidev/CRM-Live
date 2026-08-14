@@ -86,7 +86,70 @@ async function exportResponses(req, res) {
   }
 }
 
+// POST /nps/responses/:id/treatments (exclusivo do Administrador, FSD 13.9).
+// Body: { actionType: 'message'|'discount'|'voucher'|'other', ... }
+//   - message: { templateId }
+//   - discount|voucher: { creditPercent } XOR { creditValue }, validUntil opcional
+//   - other: { description, resultText }
+async function createTreatment(req, res) {
+  try {
+    const { id } = req.params;
+    const { actionType, templateId, creditPercent, creditValue, validUntil, description, resultText } = req.body;
+
+    const treatment = await npsService.registerTreatment({
+      npsResponseId: id,
+      actionType,
+      performedBy: req.user.id,
+      templateId,
+      creditPercent,
+      creditValue,
+      validUntil,
+      description,
+      resultText,
+    });
+
+    res.status(201).json({ treatment });
+  } catch (err) {
+    if (
+      err.message === 'Nota de satisfação não encontrada.' ||
+      err.message === 'Modelo de mensagem não encontrado ou inativo.'
+    ) {
+      return res.status(404).json({ error: err.message });
+    }
+    if (
+      err.message === 'Só é possível registrar tratamento para uma nota baixa.' ||
+      err.message === 'Este cliente não pode receber mensagens (sem consentimento válido ou optou por sair).' ||
+      err.message === 'Descreva a ação realizada.' ||
+      err.message === 'Tipo de ação inválido.' ||
+      err.message.includes('percentual') ||
+      err.message.includes('valor do crédito')
+    ) {
+      return res.status(400).json({ error: err.message });
+    }
+
+    console.error('Erro ao registrar tratamento de NPS:', err.message);
+    res.status(500).json({ error: 'Erro ao registrar o tratamento.' });
+  }
+}
+
+// GET /nps/responses/:id/treatments (exclusivo do Administrador — ver
+// decisão em docs/STATUS.md: a matriz de permissões do FSD distingue
+// "visualizar notas" (ambos os perfis) de "executar ações" (Admin), e o
+// histórico é parte das ações, não da listagem geral).
+async function listTreatmentsHandler(req, res) {
+  try {
+    const { id } = req.params;
+    const treatments = await npsService.listTreatments(id);
+    res.json({ treatments });
+  } catch (err) {
+    console.error('Erro ao listar histórico de tratamento de NPS:', err.message);
+    res.status(500).json({ error: 'Erro ao carregar o histórico de tratamento.' });
+  }
+}
+
 module.exports = {
   listResponses,
   exportResponses,
+  createTreatment,
+  listTreatments: listTreatmentsHandler,
 };

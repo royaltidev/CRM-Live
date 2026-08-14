@@ -1,7 +1,100 @@
 # Status do Projeto — CRM Live
 
 **Última atualização:** 13/08/2026
-**Atualizado por:** Fase 10 — alerta de nota baixa por WhatsApp ao Administrador implementado e testado; Parte 2 (tela de gestão de NPS) implementada e testada; Parte 1 (captura de resposta de NPS) implementada e testada; Fase 9 (Caixa de entrada, atendimento e encaminhamento de lead) implementada e testada, Fase 9 concluída; Fase 8 — Parte 5 (Campanhas) implementada e testada, Fase 8 concluída; Parte 4 (Cross-sell) implementada e testada; Parte 1 (Templates) implementada e testada; validação da Fase 7 em ambiente real
+**Atualizado por:** Fase 10 — Parte 3 (ações de tratamento de NPS) implementada e testada, Fase 10 concluída; alerta de nota baixa por WhatsApp ao Administrador implementado e testado; Parte 2 (tela de gestão de NPS) implementada e testada; Parte 1 (captura de resposta de NPS) implementada e testada; Fase 9 (Caixa de entrada, atendimento e encaminhamento de lead) implementada e testada, Fase 9 concluída; Fase 8 — Parte 5 (Campanhas) implementada e testada, Fase 8 concluída; Parte 4 (Cross-sell) implementada e testada; Parte 1 (Templates) implementada e testada; validação da Fase 7 em ambiente real
+
+## Fase 10 — Parte 3: Ações de tratamento de NPS — 13/08/2026 (Fase 10 concluída)
+
+**Objetivo (FSD 12.12, 13.9, 14.8):** a partir de uma nota baixa, o
+Administrador pode enviar mensagem padronizada, oferecer desconto/voucher,
+localizar o vendedor responsável, e consultar o histórico de tratamento.
+**Parte 3 concluída e testada — Fase 10 (Gestão de satisfação/NPS) concluída
+por completo.**
+
+### Decisões de design (ambiguidades do FSD resolvidas nesta parte)
+
+- **Escopo das ações:** só podem ser registradas para uma nota BAIXA
+  (`low_score_open` ou `low_score_treated`) — o fluxo 13.9 é literalmente
+  "Gestão de nota de satisfação baixa", não notas normais/pendentes. Uma
+  tentativa numa nota fora dessa faixa é rejeitada (400).
+- **"Oferecer desconto/voucher":** reaproveita o módulo de Giftback/Cashback
+  já existente (`giftback.service.js#createGiftback`) em vez de inventar um
+  segundo conceito de "voucher" — um giftback JÁ É "crédito concedido a UM
+  cliente específico", exatamente o que a ação precisa. `action_type`
+  ('discount' ou 'voucher', ambos do enum do FSD) só rotula a intenção
+  escolhida pelo Admin; as duas criam um giftback real (percentual OU valor
+  fixo, validade opcional), reaproveitando a mesma validação do CRUD de
+  Giftback.
+- **"Enviar mensagem padronizada":** reaproveita `message_templates` (nunca
+  texto fixo no código) e envia IMEDIATAMENTE, fora da fila — mesmo padrão
+  de `sendManualReply` (Fase 9): ação pontual do Administrador, não disparo
+  em volume. Consentimento continua sendo checado antes de enviar (FSD 6.6:
+  "automática ou manual").
+- **"Localizar vendedor responsável":** já satisfeito pela Parte 2 (coluna
+  "Vendedor" na listagem) — não precisa de uma ação/endpoint novo, é só
+  consulta, já visível sem passo extra.
+- **Quando a nota vira "tratada":** o FSD (13.9, "erros possíveis") deixa
+  claro que uma ação que FALHA ainda é registrada em `nps_treatments` ("com
+  opção de nova tentativa") — mas isso não resolveu o problema do cliente.
+  Por isso `status` só vira `low_score_treated` quando a ação teve sucesso
+  de verdade (mensagem enviada ou giftback criado); uma falha mantém a nota
+  em `low_score_open`. A ação `other` é sempre uma declaração explícita do
+  Admin de que já tratou de outra forma — sempre marca como tratada.
+- **Permissão do histórico:** `GET /nps/responses/:id/treatments` é
+  exclusivo do Administrador (`requireAdmin`) — a matriz de permissões do
+  FSD (linha 339) distingue "Visualizar / Executar ações" (Admin) de
+  "Somente visualizar notas" (Acesso Limitado); o histórico de tratamento é
+  parte das AÇÕES, não da listagem geral de notas (que continua liberada
+  aos dois perfis desde a Parte 2).
+
+### Implementação
+
+- `backend/app/services/nps.service.js` — `registerTreatment` (ponto de
+  entrada único, valida escopo e despacha por `actionType`),
+  `registerMessageTreatment`, `registerDiscountTreatment`,
+  `registerOtherTreatment`, `listTreatments`. Reaproveita
+  `templates.service.js`, `rules-engine.service.js#renderTemplate`,
+  `conversations.service.js`, `consent.service.js`,
+  `giftback.service.js#createGiftback` — nenhuma lógica duplicada.
+- `backend/app/controllers/nps.controller.js` — `createTreatment`,
+  `listTreatments` (mapeamento de erros de validação para 400/404).
+- Rotas `POST /nps/responses/:id/treatments` e
+  `GET /nps/responses/:id/treatments`, ambas `requireAdmin`.
+- `frontend/src/views/NPS/NPS.jsx` — coluna "Ações" (só Admin) com botão
+  "Tratar" nas notas baixas; diálogo com histórico de tratamento + formulário
+  (tipo de ação, campos condicionais por tipo), feedback de sucesso/erro.
+
+### Testes realizados
+
+- `node -c` nos arquivos alterados; `vite build` completo sem erros.
+- Smoke tests: `POST`/`GET /nps/responses/:id/treatments` retornam 401 sem
+  sessão.
+- Testes diretos contra o Postgres real (cliente Thiago Batista, com
+  consentimento válido): rejeita tratamento em nota que não é baixa; rejeita
+  `actionType` inválido; ação `other` cria o registro e marca a nota como
+  tratada; ação `discount` cria um giftback REAL vinculado ao cliente certo
+  e marca a nota como tratada; percentual+valor juntos é rejeitado
+  (reaproveitando a validação do Giftback) SEM criar nenhum registro; ação
+  `message` com template válido tenta enviar (sessão do WhatsApp deste
+  ambiente não pareada → falha rápida), registra o tratamento com a falha,
+  mas MANTÉM a nota como não tratada (comportamento esperado); histórico
+  traz os registros na ordem certa com o nome de quem tratou. Todo dado de
+  teste (nota, tratamentos, giftback) removido ao final.
+- Teste real de UI (extensão Chrome, sessão Admin autenticada): botão
+  "Tratar" aparece só nas notas baixas; diálogo abre com histórico vazio;
+  troca de tipo de ação mostra os campos certos (modelo de mensagem /
+  percentual-valor-validade / descrição-resultado); registrar um desconto de
+  20% criou o giftback de verdade (confirmado no banco), fechou o diálogo,
+  mostrou a confirmação ("Ação registrada: Crédito #8 criado com sucesso."),
+  e a linha da tabela atualizou para "Nota baixa — tratada" (verde, sem mais
+  o destaque vermelho); reabrir o diálogo mostrou o histórico correto (ação,
+  descrição, resultado, quem tratou, quando). Giftback de teste removido ao
+  final.
+
+**Fase 10 concluída** (captura de resposta, alerta por WhatsApp, tela de
+gestão, ações de tratamento). Assim como as fases anteriores, sem o carimbo
+final do Codex (cota esgotada) — recomenda-se revisão retroativa quando a
+cota voltar.
 
 ## Fase 10 — Extensão: alerta de nota baixa por WhatsApp ao Administrador — 13/08/2026
 
@@ -844,9 +937,9 @@ Decisões técnicas tomadas nesta etapa (pontos que o `docs/FSD.md` deixava em a
 | 5 | Cadastro/visão 360º do cliente + Segmentação | ✅ Concluída |
 | 6 | Consentimento (LGPD) + camada de mensageria | ✅ Concluída |
 | 7 | Réguas de relacionamento (automações) | ✅ Concluída |
-| 8 | Campanhas, templates, cupons, giftback, uploads | ⏳ Não iniciada |
-| 9 | Atendimento (caixa de entrada) e leads | ⏳ Não iniciada |
-| 10 | Gestão de satisfação (NPS) | ⏳ Não iniciada |
+| 8 | Campanhas, templates, cupons, giftback, uploads | ✅ Concluída |
+| 9 | Atendimento (caixa de entrada) e leads | ✅ Concluída |
+| 10 | Gestão de satisfação (NPS) | ✅ Concluída |
 | 11 | Relatórios, dashboards e exportações | ⏳ Não iniciada |
 | Final | Itens transversais, segurança, qualidade, deploy | ⏳ Não iniciada |
 

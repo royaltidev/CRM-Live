@@ -215,6 +215,8 @@ app.post('/inbox/conversations/:id/reply', requireAuth, requireAdmin, inboxContr
 
 app.get('/nps/responses', requireAuth, npsController.listResponses);
 app.get('/nps/responses/export', requireAuth, npsController.exportResponses);
+app.post('/nps/responses/:id/treatments', requireAuth, requireAdmin, npsController.createTreatment);
+app.get('/nps/responses/:id/treatments', requireAuth, requireAdmin, npsController.listTreatments);
 
 // ===== Rotas de Configurações (FSD 12.13 — exclusivas do Admin) =====
 

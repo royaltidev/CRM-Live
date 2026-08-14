@@ -40,10 +40,43 @@
 //   da venda (agregadas), e o filtro por categoria casa se QUALQUER item da
 //   venda pertencer a ela — mesmo critério "ao menos um item corresponde"
 //   já usado em outras telas do sistema.
+// - Ações de tratamento (13.9) — Parte 3: só podem ser registradas para uma
+//   nota BAIXA (`low_score_open`/`low_score_treated`) — o fluxo 13.9 é
+//   especificamente "Gestão de nota de satisfação baixa", não se aplica a
+//   notas normais/pendentes.
+// - "Oferecer desconto/voucher" (12.12) — Parte 3: reaproveita o módulo de
+//   Giftback/Cashback já existente (`giftback.service.js`), que já é
+//   exatamente "crédito concedido a UM cliente específico" — em vez de
+//   inventar um segundo conceito de "voucher" paralelo. `action_type`
+//   ('discount' ou 'voucher', ambos do enum do FSD) só rotula a intenção
+//   escolhida pelo Admin; os dois criam um giftback de verdade.
+// - "Enviar mensagem padronizada" — Parte 3: reaproveita `message_templates`
+//   (mesmo padrão do resto do sistema, nunca texto fixo no código) e envia
+//   IMEDIATAMENTE, fora da fila — mesmo padrão de
+//   `inbox.service.js#sendManualReply` (Fase 9): é uma ação pontual do
+//   Administrador, não um disparo em volume. Consentimento continua sendo
+//   checado (FSD 6.6 é categórico: "automática ou manual").
+// - "Localizar vendedor responsável" — já satisfeito pela Parte 2 (coluna
+//   "Vendedor" na listagem); não é uma ação que registra tratamento, é só
+//   consulta, e essa informação já está visível na tela sem passo extra.
+// - Quando a nota vira "tratada": FSD 13.9 ("erros possíveis: falha ao
+//   enviar a mensagem de tratamento, registrada, com opção de nova
+//   tentativa") deixa claro que uma ação que FALHA ainda é registrada em
+//   `nps_treatments`, mas isso não resolveu o problema do cliente — por
+//   isso `status` só vira `low_score_treated` quando a ação teve sucesso de
+//   verdade (mensagem enviada ou giftback criado); uma falha mantém a nota
+//   em `low_score_open`, disponível para nova tentativa. A ação `other` é
+//   sempre uma declaração explícita do Admin de que tratou de outra forma —
+//   sempre marca como tratada.
 
 const { crmPool } = require('../database/connection');
 const automationSettingsService = require('./automation-settings.service');
 const whatsapp = require('../integrations/whatsapp');
+const templatesService = require('./templates.service');
+const rulesEngineService = require('./rules-engine.service');
+const conversationsService = require('./conversations.service');
+const consentService = require('./consent.service');
+const giftbackService = require('./giftback.service');
 
 // Faixas padrão da metodologia NPS (fixas, não configuráveis).
 const SCORE_BANDS = {
@@ -236,6 +269,186 @@ async function captureNpsResponse({ customerId, customerName, body }) {
   return result.rows[0];
 }
 
+// Notas em que faz sentido registrar tratamento (ver decisão de escopo no
+// topo do arquivo — 13.9 é especificamente sobre nota BAIXA).
+const TREATABLE_STATUSES = ['low_score_open', 'low_score_treated'];
+
+async function getNpsResponseForTreatment(npsResponseId) {
+  const result = await crmPool.query(
+    `SELECT n.id, n.customer_id, n.status, n.score, c.name AS customer_name, c.phone_e164 AS customer_phone
+     FROM nps_responses n
+     INNER JOIN customers c ON c.id = n.customer_id
+     WHERE n.id = $1`,
+    [npsResponseId]
+  );
+
+  return result.rows[0] || null;
+}
+
+async function insertTreatment({ npsResponseId, actionType, description, performedBy, result }) {
+  const inserted = await crmPool.query(
+    `INSERT INTO nps_treatments (nps_response_id, action_type, description, performed_by, result)
+     VALUES ($1, $2, $3, $4, $5)
+     RETURNING *`,
+    [npsResponseId, actionType, description, performedBy, result]
+  );
+
+  return inserted.rows[0];
+}
+
+async function markTreated(npsResponseId) {
+  await crmPool.query(`UPDATE nps_responses SET status = 'low_score_treated' WHERE id = $1`, [npsResponseId]);
+}
+
+// Mensagem padronizada enviada imediatamente (fora da fila — ver decisão
+// acima). Uma falha de envio ainda registra o tratamento (FSD 13.9), só não
+// marca a nota como tratada (ver markTreated, chamado só quando success).
+async function registerMessageTreatment({ response, templateId, performedBy }) {
+  const template = await templatesService.getTemplateById(templateId);
+  if (!template || !template.active) {
+    throw new Error('Modelo de mensagem não encontrado ou inativo.');
+  }
+
+  const eligible = await consentService.isCustomerEligibleForMessage(response.customer_id);
+  if (!eligible) {
+    throw new Error('Este cliente não pode receber mensagens (sem consentimento válido ou optou por sair).');
+  }
+
+  let body = rulesEngineService.renderTemplate(template.bodyText, { nome: response.customer_name });
+  if (template.linkUrl) {
+    body = `${body}\n\n${template.linkUrl}`;
+  }
+
+  const conversationId = await conversationsService.getOrCreateConversationForCustomer(response.customer_id);
+
+  const inserted = await crmPool.query(
+    `INSERT INTO messages (conversation_id, customer_id, direction, body, template_id, trigger_source, status)
+     VALUES ($1, $2, 'outbound', $3, $4, 'manual', 'queued')
+     RETURNING *`,
+    [conversationId, response.customer_id, body, templateId]
+  );
+  const messageRow = inserted.rows[0];
+
+  let success = true;
+  let resultText;
+  try {
+    const sendResult = await whatsapp.sendText({ to: response.customer_phone, body });
+    await crmPool.query(
+      `UPDATE messages SET status = 'sent', sent_at = NOW(), external_message_id = $2 WHERE id = $1`,
+      [messageRow.id, sendResult && sendResult.externalMessageId ? sendResult.externalMessageId : null]
+    );
+    resultText = 'Mensagem enviada com sucesso.';
+  } catch (err) {
+    await crmPool.query(`UPDATE messages SET status = 'failed' WHERE id = $1`, [messageRow.id]);
+    success = false;
+    resultText = `Falha ao enviar: ${err.message}`;
+  }
+
+  const treatment = await insertTreatment({
+    npsResponseId: response.id,
+    actionType: 'message',
+    description: `Mensagem padronizada: "${template.name}"`,
+    performedBy,
+    result: resultText,
+  });
+
+  return { treatment, success };
+}
+
+// Cria um giftback de verdade pro cliente da nota (reaproveita
+// giftback.service.js — ver decisão acima). Validação roda ANTES de
+// qualquer log: se falhar, nada aconteceu, então nada é registrado.
+async function registerDiscountTreatment({ response, actionType, creditPercent, creditValue, validUntil, performedBy }) {
+  const giftback = await giftbackService.createGiftback({
+    customerId: response.customer_id,
+    creditPercent,
+    creditValue,
+    validUntil,
+  });
+
+  const amountLabel = giftback.creditPercent !== null ? `${giftback.creditPercent}%` : `R$ ${giftback.creditValue}`;
+  const treatment = await insertTreatment({
+    npsResponseId: response.id,
+    actionType,
+    description: `Giftback criado: ${amountLabel}${validUntil ? `, válido até ${validUntil}` : ''}`,
+    performedBy,
+    result: `Crédito #${giftback.id} criado com sucesso.`,
+  });
+
+  return { treatment, success: true };
+}
+
+// Ação livre — estrutura extensível citada no FSD 6.8 (novas ações futuras
+// sem retrabalho estrutural). Sempre marca como tratada: é uma declaração
+// explícita do Admin de que já resolveu de outra forma.
+async function registerOtherTreatment({ response, description, resultText, performedBy }) {
+  if (!description || !description.trim()) {
+    throw new Error('Descreva a ação realizada.');
+  }
+
+  const treatment = await insertTreatment({
+    npsResponseId: response.id,
+    actionType: 'other',
+    description: description.trim(),
+    performedBy,
+    result: resultText && resultText.trim() ? resultText.trim() : 'Registrado.',
+  });
+
+  return { treatment, success: true };
+}
+
+// Ponto de entrada único das ações de tratamento (FSD 13.9, passos 5–6).
+async function registerTreatment({
+  npsResponseId,
+  actionType,
+  performedBy,
+  templateId,
+  creditPercent,
+  creditValue,
+  validUntil,
+  description,
+  resultText,
+}) {
+  const response = await getNpsResponseForTreatment(npsResponseId);
+  if (!response) {
+    throw new Error('Nota de satisfação não encontrada.');
+  }
+  if (!TREATABLE_STATUSES.includes(response.status)) {
+    throw new Error('Só é possível registrar tratamento para uma nota baixa.');
+  }
+
+  let outcome;
+  if (actionType === 'message') {
+    outcome = await registerMessageTreatment({ response, templateId, performedBy });
+  } else if (actionType === 'discount' || actionType === 'voucher') {
+    outcome = await registerDiscountTreatment({ response, actionType, creditPercent, creditValue, validUntil, performedBy });
+  } else if (actionType === 'other') {
+    outcome = await registerOtherTreatment({ response, description, resultText, performedBy });
+  } else {
+    throw new Error('Tipo de ação inválido.');
+  }
+
+  if (outcome.success) {
+    await markTreated(npsResponseId);
+  }
+
+  return outcome.treatment;
+}
+
+// Histórico de tratamento de uma nota (FSD 12.12/13.9).
+async function listTreatments(npsResponseId) {
+  const result = await crmPool.query(
+    `SELECT t.*, u.name AS performed_by_name, u.email AS performed_by_email
+     FROM nps_treatments t
+     LEFT JOIN users u ON u.id = t.performed_by
+     WHERE t.nps_response_id = $1
+     ORDER BY t.created_at ASC`,
+    [npsResponseId]
+  );
+
+  return result.rows;
+}
+
 module.exports = {
   SCORE_BANDS,
   parseNpsScore,
@@ -244,4 +457,6 @@ module.exports = {
   notifyAdminsOfLowScore,
   listNpsResponses,
   listNpsResponsesForExport,
+  registerTreatment,
+  listTreatments,
 };

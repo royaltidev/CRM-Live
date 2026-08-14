@@ -65,20 +65,42 @@ async function setDiscountPercent(req, res) {
   }
 }
 
-// POST /complementary-products
-async function createComplementaryProduct(req, res) {
+// PATCH /complementary-products/bulk-active { ids: [], active: bool }
+// Ativa ou desativa várias sugestões de uma vez (ação em lote da tela de
+// Cross-sell, remodelagem de 14/08/2026).
+async function bulkSetActive(req, res) {
   try {
-    const { productId, complementaryProductId } = req.body;
-    const item = await complementaryProductsService.createComplementaryProduct({
-      productId,
-      complementaryProductId,
-      createdBy: req.user.id,
-    });
-    res.status(201).json({ complementaryProduct: item });
+    const { ids, active } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'Selecione ao menos uma sugestão.' });
+    }
+    if (typeof active !== 'boolean') {
+      return res.status(400).json({ error: 'Informe se as sugestões devem ficar ativas ou inativas.' });
+    }
+    const affected = await complementaryProductsService.bulkSetActive(ids, active);
+    res.json({ affected });
   } catch (err) {
-    if (handleKnownErrors(err, res)) return;
-    console.error('Erro ao criar produto complementar:', err.message);
-    res.status(500).json({ error: 'Erro ao criar produto complementar.' });
+    console.error('Erro ao atualizar sugestões em lote:', err.message);
+    res.status(500).json({ error: 'Erro ao atualizar as sugestões selecionadas.' });
+  }
+}
+
+// PATCH /complementary-products/bulk-dismiss { ids: [], dismissed: bool }
+// Descarta (ou restaura) sugestões em lote. Descartar marca a decisão em vez
+// de apagar a linha — ver complementary-products.service.js/bulkDismiss.
+async function bulkDismiss(req, res) {
+  try {
+    const { ids, dismissed = true } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'Selecione ao menos uma sugestão.' });
+    }
+    const affected = dismissed
+      ? await complementaryProductsService.bulkDismiss(ids)
+      : await complementaryProductsService.bulkRestore(ids);
+    res.json({ affected });
+  } catch (err) {
+    console.error('Erro ao descartar sugestões em lote:', err.message);
+    res.status(500).json({ error: 'Erro ao atualizar as sugestões selecionadas.' });
   }
 }
 
@@ -124,8 +146,9 @@ module.exports = {
   listComplementaryProducts,
   getDiscountPercent,
   setDiscountPercent,
-  createComplementaryProduct,
   detectPatterns,
+  bulkSetActive,
+  bulkDismiss,
   toggleActive,
   deleteComplementaryProduct,
 };

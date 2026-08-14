@@ -191,8 +191,11 @@ app.get('/products/categories', requireAuth, productsController.listCategories);
 app.get('/complementary-products/settings/discount-percent', requireAuth, complementaryProductsController.getDiscountPercent);
 app.patch('/complementary-products/settings/discount-percent', requireAuth, complementaryProductsController.setDiscountPercent);
 app.get('/complementary-products', requireAuth, complementaryProductsController.listComplementaryProducts);
-app.post('/complementary-products', requireAuth, complementaryProductsController.createComplementaryProduct);
 app.post('/complementary-products/detect-patterns', requireAuth, complementaryProductsController.detectPatterns);
+// Ações em lote sobre as sugestões detectadas. Declaradas antes das rotas
+// com `:id` para que "bulk" não seja capturado como um id.
+app.patch('/complementary-products/bulk-active', requireAuth, complementaryProductsController.bulkSetActive);
+app.patch('/complementary-products/bulk-dismiss', requireAuth, complementaryProductsController.bulkDismiss);
 app.patch('/complementary-products/:id/toggle-active', requireAuth, complementaryProductsController.toggleActive);
 app.delete('/complementary-products/:id', requireAuth, complementaryProductsController.deleteComplementaryProduct);
 

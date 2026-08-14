@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   Box,
   Container,
@@ -20,19 +20,30 @@ import {
   MenuItem,
   Chip,
   Snackbar,
-  Autocomplete,
+  Checkbox,
+  Tooltip,
 } from '@mui/material';
 import AutoAwesomeOutlinedIcon from '@mui/icons-material/AutoAwesomeOutlined';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 
-// Tela de Cross-sell / produtos complementares (FSD seções 6.4, 12.9, 14.6).
+// Tela de Cross-sell / produtos complementares (FSD seções 6.4, 12.9, 14.6),
+// remodelada em 14/08/2026 (escopo novo, pedido pelo responsável).
 //
-// Cuida só de duas coisas: a relação produto -> complemento
-// (`complementary_products`) e o percentual de desconto da oferta
-// automática. A régua que efetivamente envia a mensagem pós-compra é criada
-// na tela de Réguas (gatilho "Cross-sell"), com seu próprio modelo de
-// mensagem — não há campo de template aqui, por design (FSD 12.9).
+// Duas seções:
+//  1. "Padrões detectados" — as sugestões do motor de afinidade que ainda
+//     aguardam decisão, com as métricas que justificam cada uma (vendas em
+//     conjunto, confiança e lift) e ações EM LOTE na própria tela. A lista é
+//     persistida (migration 040), então continua disponível depois de fechar
+//     a tela — antes o resultado da detecção sumia junto com o diálogo.
+//  2. "Ofertas de cross-sell ativas" — os pares que já viraram oferta.
+//
+// O cadastro MANUAL de par foi removido (decisão do responsável, diverge do
+// FSD 6.4): todo par novo nasce da detecção e é aceito ou descartado aqui.
+//
+// A régua que efetivamente envia a mensagem pós-compra é criada na tela de
+// Réguas (gatilho "Cross-sell"), com seu próprio modelo de mensagem — não há
+// campo de template aqui, por design (FSD 12.9).
 //
 // Acessível por Admin E Acesso Limitado, sem distinção de permissão (FSD
 // linha 336 da matriz) — diferente de Cupons/Giftback/Templates.
@@ -43,15 +54,42 @@ const SOURCE_LABELS = {
 };
 
 const STATUS_FILTER_OPTIONS = [
-  { value: '', label: 'Todos' },
-  { value: 'true', label: 'Ativos' },
-  { value: 'false', label: 'Inativos' },
+  { value: '', label: 'Todas' },
+  { value: 'true', label: 'Ativas' },
+  { value: 'false', label: 'Inativas' },
 ];
 
-const emptyForm = {
-  product: null,
-  complement: null,
-};
+function formatDate(dateString) {
+  if (!dateString) return '—';
+  return new Date(dateString).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+}
+
+function formatDateTime(dateString) {
+  if (!dateString) return null;
+  return new Date(dateString).toLocaleString('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+// Nome + código do Uniplus: o catálogo real tem dezenas de produtos
+// diferentes com nome idêntico (17 "LANCHEIRA SESTINE", por exemplo), então
+// sem o código duas linhas ficam indistinguíveis.
+function ProductLabel({ name, code }) {
+  return (
+    <Box>
+      <Typography variant="body2">{name}</Typography>
+      {code && (
+        <Typography variant="caption" sx={{ color: '#666666' }}>
+          cód. {code}
+        </Typography>
+      )}
+    </Box>
+  );
+}
 
 export default function CrossSell() {
   const navigate = useNavigate();
@@ -69,22 +107,15 @@ export default function CrossSell() {
   const [discountSaving, setDiscountSaving] = useState(false);
   const [discountError, setDiscountError] = useState(null);
 
-  const [formOpen, setFormOpen] = useState(false);
-  const [form, setForm] = useState(emptyForm);
-  const [formError, setFormError] = useState(null);
-  const [saving, setSaving] = useState(false);
-
-  const [productOptions, setProductOptions] = useState([]);
-  const [productSearchLoading, setProductSearchLoading] = useState(false);
-  const [complementOptions, setComplementOptions] = useState([]);
-  const [complementSearchLoading, setComplementSearchLoading] = useState(false);
-
   const [deletingItem, setDeletingItem] = useState(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [snackbar, setSnackbar] = useState(null);
 
   const [detecting, setDetecting] = useState(false);
   const [detectResult, setDetectResult] = useState(null);
+  const [selectedSuggestions, setSelectedSuggestions] = useState(new Set());
+  const [bulkWorking, setBulkWorking] = useState(false);
+  const [showDismissed, setShowDismissed] = useState(false);
 
   const handleAuthFailure = useCallback(
     async (response) => {
@@ -98,18 +129,15 @@ export default function CrossSell() {
     [logout, navigate]
   );
 
+  // Carrega TODOS os pares de uma vez e separa no cliente entre "sugestões
+  // pendentes" e "ofertas": são poucas linhas, e assim as duas seções nunca
+  // ficam fora de sincronia entre si.
   const loadItems = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
 
-      const params = new URLSearchParams();
-      if (statusFilter) params.set('active', statusFilter);
-
-      const response = await fetch(`/complementary-products?${params.toString()}`, {
-        method: 'GET',
-        credentials: 'include',
-      });
+      const response = await fetch('/complementary-products', { method: 'GET', credentials: 'include' });
 
       if (await handleAuthFailure(response)) return;
       if (!response.ok) throw new Error('Falha ao carregar produtos complementares.');
@@ -121,7 +149,7 @@ export default function CrossSell() {
     } finally {
       setLoading(false);
     }
-  }, [statusFilter, handleAuthFailure]);
+  }, [handleAuthFailure]);
 
   const loadDiscountPercent = useCallback(async () => {
     try {
@@ -151,78 +179,104 @@ export default function CrossSell() {
     loadDiscountPercent();
   }, [loadDiscountPercent]);
 
-  async function searchProducts(term, setOptions, setSearchLoading) {
-    if (!term || term.length < 2) {
-      setOptions([]);
-      return;
-    }
+  // Pendente de decisão = sugestão automática ainda não ativada nem
+  // descartada. Desativar uma oferta sugerida devolve ela para cá, como uma
+  // decisão a rever.
+  const pendingSuggestions = useMemo(
+    () => items.filter((item) => item.source === 'suggested' && !item.active && !item.dismissedAt),
+    [items]
+  );
 
+  const dismissedSuggestions = useMemo(() => items.filter((item) => item.dismissedAt), [items]);
+
+  const offers = useMemo(() => {
+    const decided = items.filter(
+      (item) => !item.dismissedAt && !(item.source === 'suggested' && !item.active)
+    );
+    if (statusFilter === '') return decided;
+    return decided.filter((item) => String(item.active) === statusFilter);
+  }, [items, statusFilter]);
+
+  const lastDetectionAt = useMemo(() => {
+    const dates = items.map((item) => item.detectedAt).filter(Boolean);
+    return dates.length > 0 ? dates.sort().slice(-1)[0] : null;
+  }, [items]);
+
+  // A seleção guarda ids que podem sumir da lista depois de uma ação em
+  // lote; sempre cruzar com as sugestões atuais antes de usar.
+  const selectedPendingIds = useMemo(
+    () => pendingSuggestions.filter((item) => selectedSuggestions.has(item.id)).map((item) => item.id),
+    [pendingSuggestions, selectedSuggestions]
+  );
+
+  function toggleSuggestion(id) {
+    setSelectedSuggestions((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleAllSuggestions() {
+    setSelectedSuggestions((prev) => {
+      const allSelected = pendingSuggestions.length > 0 && pendingSuggestions.every((item) => prev.has(item.id));
+      return allSelected ? new Set() : new Set(pendingSuggestions.map((item) => item.id));
+    });
+  }
+
+  async function handleBulkActivate() {
+    if (selectedPendingIds.length === 0) return;
     try {
-      setSearchLoading(true);
-      const response = await fetch(`/products?search=${encodeURIComponent(term)}&active=true`, {
-        method: 'GET',
-        credentials: 'include',
-      });
-
-      if (await handleAuthFailure(response)) return;
-      if (!response.ok) return;
-
-      const data = await response.json();
-      setOptions(data.products || []);
-    } catch (err) {
-      setOptions([]);
-    } finally {
-      setSearchLoading(false);
-    }
-  }
-
-  function openCreateDialog() {
-    setForm(emptyForm);
-    setProductOptions([]);
-    setComplementOptions([]);
-    setFormError(null);
-    setFormOpen(true);
-  }
-
-  function closeFormDialog() {
-    setFormOpen(false);
-    setForm(emptyForm);
-    setFormError(null);
-  }
-
-  async function handleSave() {
-    try {
-      setSaving(true);
-      setFormError(null);
-
-      if (!form.product || !form.complement) {
-        throw new Error('Selecione o produto e o produto complementar.');
-      }
-
-      const response = await fetch('/complementary-products', {
-        method: 'POST',
+      setBulkWorking(true);
+      const response = await fetch('/complementary-products/bulk-active', {
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({
-          productId: form.product.id,
-          complementaryProductId: form.complement.id,
-        }),
+        body: JSON.stringify({ ids: selectedPendingIds, active: true }),
       });
 
       if (await handleAuthFailure(response)) return;
       const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Não foi possível ativar as sugestões.');
 
-      if (!response.ok) {
-        throw new Error(data.error || 'Não foi possível salvar a relação de produtos.');
-      }
-
-      closeFormDialog();
-      setSnackbar({ severity: 'success', message: 'Produto complementar cadastrado com sucesso.' });
+      setSnackbar({ severity: 'success', message: `${data.affected} oferta(s) de cross-sell ativada(s).` });
+      setSelectedSuggestions(new Set());
       await loadItems();
     } catch (err) {
-      setFormError(err.message || 'Erro ao salvar produto complementar.');
+      setSnackbar({ severity: 'error', message: err.message || 'Erro ao ativar as sugestões.' });
     } finally {
-      setSaving(false);
+      setBulkWorking(false);
+    }
+  }
+
+  async function handleBulkDismiss(ids = selectedPendingIds, dismissed = true) {
+    if (ids.length === 0) return;
+    try {
+      setBulkWorking(true);
+      const response = await fetch('/complementary-products/bulk-dismiss', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ ids, dismissed }),
+      });
+
+      if (await handleAuthFailure(response)) return;
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Não foi possível atualizar as sugestões.');
+
+      setSnackbar({
+        severity: 'success',
+        message: dismissed
+          ? `${data.affected} sugestão(ões) descartada(s) — não voltarão a ser sugeridas.`
+          : `${data.affected} sugestão(ões) restaurada(s).`,
+      });
+      setSelectedSuggestions(new Set());
+      await loadItems();
+    } catch (err) {
+      setSnackbar({ severity: 'error', message: err.message || 'Erro ao atualizar as sugestões.' });
+    } finally {
+      setBulkWorking(false);
     }
   }
 
@@ -297,9 +351,7 @@ export default function CrossSell() {
       if (await handleAuthFailure(response)) return;
       const data = await response.json();
 
-      if (!response.ok) {
-        throw new Error(data.error || 'Não foi possível salvar o percentual de desconto.');
-      }
+      if (!response.ok) throw new Error(data.error || 'Não foi possível salvar o percentual de desconto.');
 
       setDiscountPercent(data.percent);
       setDiscountEditing(false);
@@ -311,9 +363,8 @@ export default function CrossSell() {
     }
   }
 
-  // Motor de detecção de padrões (Venda Inteligente — escopo novo, ver
-  // backend/services/product-affinity.service.js). Sugestões criadas
-  // entram inativas ('suggested') e aparecem na listagem acima pra revisão
+  // Motor de detecção de padrões (ver backend/services/product-affinity.service.js).
+  // Sugestões criadas entram inativas e ficam na seção de padrões detectados
   // — nada é ativado automaticamente.
   async function handleDetectPatterns() {
     try {
@@ -326,14 +377,10 @@ export default function CrossSell() {
       if (await handleAuthFailure(response)) return;
       const data = await response.json();
 
-      if (!response.ok) {
-        throw new Error(data.error || 'Não foi possível detectar padrões.');
-      }
+      if (!response.ok) throw new Error(data.error || 'Não foi possível detectar padrões.');
 
       setDetectResult(data);
-      if (data.suggestionsCreated > 0) {
-        await loadItems();
-      }
+      await loadItems();
     } catch (err) {
       setSnackbar({ severity: 'error', message: err.message || 'Erro ao detectar padrões.' });
     } finally {
@@ -341,14 +388,8 @@ export default function CrossSell() {
     }
   }
 
-  const formatDate = (dateString) => {
-    if (!dateString) return '—';
-    return new Date(dateString).toLocaleDateString('pt-BR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-    });
-  };
+  const allPendingSelected =
+    pendingSuggestions.length > 0 && pendingSuggestions.every((item) => selectedSuggestions.has(item.id));
 
   return (
     <Container maxWidth={false} sx={{ paddingY: 4, paddingX: 4 }}>
@@ -357,7 +398,8 @@ export default function CrossSell() {
           Cross-sell
         </Typography>
         <Typography variant="body2" sx={{ color: '#666666' }}>
-          Produtos complementares oferecidos automaticamente após a compra, com desconto.
+          Produtos que o sistema identificou serem comprados juntos, com base nas vendas reais. Ative uma sugestão
+          para transformá-la em oferta automática pós-compra.
         </Typography>
       </Box>
 
@@ -367,61 +409,232 @@ export default function CrossSell() {
         </Alert>
       )}
 
+      {/* Percentual de desconto da oferta */}
       <Card sx={{ padding: 3, marginBottom: 3 }}>
-        <Typography variant="h6" sx={{ marginBottom: 1 }}>
-          Percentual de desconto da oferta
-        </Typography>
-        {discountLoading ? (
-          <CircularProgress size={20} />
-        ) : discountEditing ? (
-          <Box sx={{ display: 'flex', gap: 2, alignItems: 'flex-start' }}>
-            <TextField
-              label="Percentual (%)"
-              type="number"
-              size="small"
-              value={discountInput}
-              onChange={(e) => setDiscountInput(e.target.value)}
-              error={!!discountError}
-              helperText={discountError || ' '}
-            />
-            <Button variant="contained" disabled={discountSaving} onClick={handleSaveDiscount}>
-              Salvar
-            </Button>
-            <Button variant="text" disabled={discountSaving} onClick={() => setDiscountEditing(false)}>
-              Cancelar
-            </Button>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 2 }}>
+          <Box>
+            <Typography variant="h6" sx={{ marginBottom: 0.5 }}>
+              Desconto da oferta automática
+            </Typography>
+            <Typography variant="body2" sx={{ color: '#666666' }}>
+              Percentual aplicado no cupom enviado quando a régua de cross-sell dispara.
+            </Typography>
           </Box>
+          {discountLoading ? (
+            <CircularProgress size={24} />
+          ) : discountEditing ? (
+            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+              <TextField
+                label="Desconto (%)"
+                type="number"
+                size="small"
+                value={discountInput}
+                onChange={(e) => setDiscountInput(e.target.value)}
+                sx={{ width: 140 }}
+              />
+              <Button variant="contained" onClick={handleSaveDiscount} disabled={discountSaving}>
+                Salvar
+              </Button>
+              <Button onClick={() => setDiscountEditing(false)} disabled={discountSaving}>
+                Cancelar
+              </Button>
+            </Box>
+          ) : (
+            <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+              <Typography variant="h5" sx={{ fontWeight: 700 }}>
+                {discountPercent !== null ? `${discountPercent}%` : '—'}
+              </Typography>
+              <Button variant="outlined" size="small" onClick={openDiscountEdit}>
+                Alterar
+              </Button>
+            </Box>
+          )}
+        </Box>
+        {discountError && (
+          <Alert severity="error" sx={{ marginTop: 2 }}>
+            {discountError}
+          </Alert>
+        )}
+      </Card>
+
+      {/* Padrões detectados — decisão em lote */}
+      <Card sx={{ padding: 3, marginBottom: 3 }}>
+        <Box
+          sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 2, marginBottom: 1 }}
+        >
+          <Box>
+            <Typography variant="h6">Padrões detectados</Typography>
+            <Typography variant="body2" sx={{ color: '#666666' }}>
+              {lastDetectionAt
+                ? `Última detecção: ${formatDateTime(lastDetectionAt)}`
+                : 'Nenhuma detecção executada ainda.'}
+            </Typography>
+          </Box>
+          <Button
+            variant="outlined"
+            startIcon={<AutoAwesomeOutlinedIcon />}
+            onClick={handleDetectPatterns}
+            disabled={detecting}
+          >
+            {detecting ? 'Detectando...' : 'Detectar padrões'}
+          </Button>
+        </Box>
+
+        <Typography variant="body2" sx={{ color: '#666666', marginBottom: 2 }}>
+          Só entram pares vendidos juntos pelo menos 5 vezes, com no mínimo 30% de confiança, e cujo <strong>lift</strong>{' '}
+          é ponto fora da curva em relação aos demais — ou seja, muito além do que a simples popularidade dos dois
+          produtos explicaria. Pares comuns a centenas de itens não aparecem aqui.
+        </Typography>
+
+        {loading ? (
+          <Box sx={{ display: 'flex', justifyContent: 'center', padding: 2 }}>
+            <CircularProgress size={24} />
+          </Box>
+        ) : pendingSuggestions.length === 0 ? (
+          <Alert severity="info">
+            Nenhuma sugestão aguardando decisão. Use "Detectar padrões" para procurar novos padrões nas vendas.
+          </Alert>
         ) : (
-          <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-            {discountPercent !== null ? (
-              <Typography variant="body1">{discountPercent}%</Typography>
-            ) : (
-              <Alert severity="warning" sx={{ flexGrow: 1 }}>
-                Percentual ainda não configurado — nenhuma oferta de cross-sell será enviada até que
-                seja definido.
-              </Alert>
+          <>
+            <Box sx={{ overflowX: 'auto' }}>
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell padding="checkbox">
+                      <Checkbox
+                        size="small"
+                        checked={allPendingSelected}
+                        indeterminate={selectedPendingIds.length > 0 && !allPendingSelected}
+                        onChange={toggleAllSuggestions}
+                      />
+                    </TableCell>
+                    <TableCell>Quem compra…</TableCell>
+                    <TableCell>…também leva</TableCell>
+                    <TableCell align="right">Vendas juntas</TableCell>
+                    <TableCell align="right">Confiança</TableCell>
+                    <TableCell align="right">Lift</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {pendingSuggestions.map((item) => (
+                    <TableRow key={item.id}>
+                      <TableCell padding="checkbox">
+                        <Checkbox
+                          size="small"
+                          checked={selectedSuggestions.has(item.id)}
+                          onChange={() => toggleSuggestion(item.id)}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <ProductLabel name={item.productName} code={item.productCode} />
+                      </TableCell>
+                      <TableCell>
+                        <ProductLabel name={item.complementaryProductName} code={item.complementaryProductCode} />
+                      </TableCell>
+                      <TableCell align="right">{item.coOccurrence ?? '—'}</TableCell>
+                      <TableCell align="right">
+                        {item.confidence !== null && item.confidence !== undefined
+                          ? `${(item.confidence * 100).toFixed(0)}%`
+                          : '—'}
+                      </TableCell>
+                      <TableCell align="right">
+                        {item.lift !== null && item.lift !== undefined ? (
+                          <Tooltip title={`${item.lift.toFixed(1)}× mais provável que o acaso`}>
+                            <Chip label={`${item.lift.toFixed(1)}×`} size="small" color="success" />
+                          </Tooltip>
+                        ) : (
+                          '—'
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </Box>
+
+            <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', marginTop: 2, alignItems: 'center' }}>
+              <Button
+                variant="contained"
+                size="small"
+                disabled={selectedPendingIds.length === 0 || bulkWorking}
+                onClick={handleBulkActivate}
+              >
+                Ativar como oferta{selectedPendingIds.length > 0 ? ` (${selectedPendingIds.length})` : ''}
+              </Button>
+              <Button
+                variant="outlined"
+                color="error"
+                size="small"
+                disabled={selectedPendingIds.length === 0 || bulkWorking}
+                onClick={() => handleBulkDismiss()}
+              >
+                Descartar{selectedPendingIds.length > 0 ? ` (${selectedPendingIds.length})` : ''}
+              </Button>
+              {selectedPendingIds.length === 0 && (
+                <Typography variant="caption" sx={{ color: '#666666' }}>
+                  Selecione as sugestões que quer ativar ou descartar.
+                </Typography>
+              )}
+            </Box>
+          </>
+        )}
+
+        {dismissedSuggestions.length > 0 && (
+          <Box sx={{ marginTop: 3, paddingTop: 2, borderTop: '1px solid #e0e0e0' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1 }}>
+              <Typography variant="body2" sx={{ color: '#666666' }}>
+                {dismissedSuggestions.length} sugestão(ões) descartada(s) — não voltam a ser sugeridas.
+              </Typography>
+              <Button size="small" onClick={() => setShowDismissed((prev) => !prev)}>
+                {showDismissed ? 'Ocultar' : 'Ver descartadas'}
+              </Button>
+            </Box>
+            {showDismissed && (
+              <Box sx={{ marginTop: 1 }}>
+                {dismissedSuggestions.map((item) => (
+                  <Box
+                    key={item.id}
+                    sx={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      gap: 1,
+                      paddingY: 1,
+                      borderBottom: '1px solid #f0f0f0',
+                      flexWrap: 'wrap',
+                    }}
+                  >
+                    <Typography variant="body2" sx={{ color: '#666666' }}>
+                      {item.productName} → {item.complementaryProductName}
+                    </Typography>
+                    <Button size="small" disabled={bulkWorking} onClick={() => handleBulkDismiss([item.id], false)}>
+                      Restaurar
+                    </Button>
+                  </Box>
+                ))}
+              </Box>
             )}
-            <Button variant="outlined" onClick={openDiscountEdit}>
-              {discountPercent !== null ? 'Editar' : 'Configurar'}
-            </Button>
           </Box>
         )}
       </Card>
 
-      <Alert severity="info" sx={{ marginBottom: 3 }}>
-        Para a oferta ser enviada automaticamente, também é preciso ter uma régua ativa com o
-        gatilho "Cross-sell" na tela de Réguas de Relacionamento, com um modelo de mensagem
-        associado.
-      </Alert>
-
-      <Card sx={{ padding: 3, marginBottom: 3 }}>
-        <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
+      {/* Ofertas já decididas */}
+      <Card sx={{ padding: 3 }}>
+        <Box
+          sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 2, marginBottom: 2 }}
+        >
+          <Box>
+            <Typography variant="h6">Ofertas de cross-sell</Typography>
+            <Typography variant="body2" sx={{ color: '#666666' }}>
+              Pares já decididos. Desativar uma oferta sugerida devolve ela para "Padrões detectados".
+            </Typography>
+          </Box>
           <TextField
             select
             label="Status"
+            size="small"
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
-            size="small"
             sx={{ minWidth: 160 }}
           >
             {STATUS_FILTER_OPTIONS.map((opt) => (
@@ -430,166 +643,82 @@ export default function CrossSell() {
               </MenuItem>
             ))}
           </TextField>
-          <Box sx={{ display: 'flex', gap: 2 }}>
-            <Button
-              variant="outlined"
-              startIcon={<AutoAwesomeOutlinedIcon />}
-              onClick={handleDetectPatterns}
-              disabled={detecting}
-            >
-              {detecting ? 'Detectando...' : 'Detectar padrões automaticamente'}
-            </Button>
-            <Button variant="contained" onClick={openCreateDialog}>
-              Novo produto complementar
-            </Button>
-          </Box>
         </Box>
-      </Card>
 
-      {loading ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', padding: 4 }}>
-          <CircularProgress />
-        </Box>
-      ) : items.length === 0 ? (
-        <Card sx={{ padding: 4, textAlign: 'center' }}>
-          <Typography variant="body1" sx={{ color: '#666666' }}>
-            Nenhum produto complementar cadastrado.
+        {loading ? (
+          <Box sx={{ display: 'flex', justifyContent: 'center', padding: 4 }}>
+            <CircularProgress />
+          </Box>
+        ) : offers.length === 0 ? (
+          <Typography variant="body2" sx={{ color: '#666666' }}>
+            Nenhuma oferta de cross-sell {statusFilter === '' ? 'cadastrada' : 'com esse status'}. Ative uma sugestão
+            acima para criar a primeira.
           </Typography>
-        </Card>
-      ) : (
-        <Card>
+        ) : (
           <Box sx={{ overflowX: 'auto' }}>
-            <Table>
+            <Table size="small">
               <TableHead>
-                <TableRow sx={{ backgroundColor: '#f7f9fb' }}>
-                  <TableCell sx={{ fontWeight: 700 }}>Produto</TableCell>
-                  <TableCell sx={{ fontWeight: 700 }}>Complemento</TableCell>
-                  <TableCell sx={{ fontWeight: 700 }}>Origem</TableCell>
-                  <TableCell sx={{ fontWeight: 700 }}>Status</TableCell>
-                  <TableCell sx={{ fontWeight: 700 }}>Criado em</TableCell>
-                  <TableCell sx={{ fontWeight: 700 }}>Ações</TableCell>
+                <TableRow>
+                  <TableCell>Produto</TableCell>
+                  <TableCell>Complemento</TableCell>
+                  <TableCell>Origem</TableCell>
+                  <TableCell>Status</TableCell>
+                  <TableCell>Criado em</TableCell>
+                  <TableCell align="right">Ações</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
-                {items.map((item) => {
-                  const sourceInfo = SOURCE_LABELS[item.source] || { label: item.source, color: 'default' };
-                  return (
-                    <TableRow key={item.id}>
-                      <TableCell>{item.productName}</TableCell>
-                      <TableCell>{item.complementaryProductName}</TableCell>
-                      <TableCell>
-                        <Chip label={sourceInfo.label} color={sourceInfo.color} size="small" />
-                      </TableCell>
-                      <TableCell>
-                        <Chip
-                          label={item.active ? 'Ativo' : 'Inativo'}
-                          color={item.active ? 'success' : 'default'}
-                          size="small"
-                        />
-                      </TableCell>
-                      <TableCell>{formatDate(item.createdAt)}</TableCell>
-                      <TableCell>
-                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                          <Button size="small" variant="outlined" onClick={() => handleToggleActive(item)}>
-                            {item.active ? 'Desativar' : 'Ativar'}
-                          </Button>
-                          <Button size="small" variant="text" color="error" onClick={() => openDeleteDialog(item)}>
-                            Excluir
-                          </Button>
-                        </Box>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
+                {offers.map((item) => (
+                  <TableRow key={item.id}>
+                    <TableCell>
+                      <ProductLabel name={item.productName} code={item.productCode} />
+                    </TableCell>
+                    <TableCell>
+                      <ProductLabel name={item.complementaryProductName} code={item.complementaryProductCode} />
+                    </TableCell>
+                    <TableCell>
+                      <Chip
+                        label={SOURCE_LABELS[item.source]?.label || item.source}
+                        color={SOURCE_LABELS[item.source]?.color || 'default'}
+                        size="small"
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <Chip
+                        label={item.active ? 'Ativa' : 'Inativa'}
+                        color={item.active ? 'success' : 'default'}
+                        size="small"
+                      />
+                    </TableCell>
+                    <TableCell>{formatDate(item.createdAt)}</TableCell>
+                    <TableCell align="right">
+                      <Button size="small" onClick={() => handleToggleActive(item)}>
+                        {item.active ? 'Desativar' : 'Ativar'}
+                      </Button>
+                      <Button size="small" color="error" onClick={() => openDeleteDialog(item)}>
+                        Excluir
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
               </TableBody>
             </Table>
           </Box>
-        </Card>
-      )}
+        )}
+      </Card>
 
-      {/* Diálogo de criação */}
-      <Dialog open={formOpen} onClose={closeFormDialog} maxWidth="sm" fullWidth>
-        <DialogTitle>Novo Produto Complementar</DialogTitle>
-        <DialogContent>
-          {formError && (
-            <Alert severity="error" sx={{ marginBottom: 2, marginTop: 1 }}>
-              {formError}
-            </Alert>
-          )}
-
-          <Autocomplete
-            options={productOptions}
-            getOptionLabel={(option) => option.name || ''}
-            isOptionEqualToValue={(option, value) => option.id === value.id}
-            value={form.product}
-            loading={productSearchLoading}
-            noOptionsText="Digite ao menos 2 letras para buscar"
-            onChange={(e, newValue) => setForm({ ...form, product: newValue })}
-            onInputChange={(e, newInput) => searchProducts(newInput, setProductOptions, setProductSearchLoading)}
-            renderInput={(params) => (
-              <TextField {...params} label="Produto" required margin="normal" placeholder="Busque pelo nome..." />
-            )}
-          />
-
-          <Autocomplete
-            options={complementOptions}
-            getOptionLabel={(option) => option.name || ''}
-            isOptionEqualToValue={(option, value) => option.id === value.id}
-            value={form.complement}
-            loading={complementSearchLoading}
-            noOptionsText="Digite ao menos 2 letras para buscar"
-            onChange={(e, newValue) => setForm({ ...form, complement: newValue })}
-            onInputChange={(e, newInput) => searchProducts(newInput, setComplementOptions, setComplementSearchLoading)}
-            renderInput={(params) => (
-              <TextField
-                {...params}
-                label="Produto complementar"
-                required
-                margin="normal"
-                placeholder="Busque pelo nome..."
-              />
-            )}
-          />
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={closeFormDialog} disabled={saving}>
-            Cancelar
-          </Button>
-          <Button variant="contained" onClick={handleSave} disabled={saving}>
-            {saving ? 'Salvando...' : 'Salvar'}
-          </Button>
-        </DialogActions>
-      </Dialog>
-
-      {/* Diálogo de exclusão */}
-      <Dialog open={deleteOpen} onClose={() => setDeleteOpen(false)}>
-        <DialogTitle>Excluir relação de produto complementar?</DialogTitle>
-        <DialogContent>
-          <Typography variant="body2">
-            {deletingItem?.productName} deixará de oferecer {deletingItem?.complementaryProductName} como
-            cross-sell. Esta ação não pode ser desfeita.
-          </Typography>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setDeleteOpen(false)}>Cancelar</Button>
-          <Button variant="contained" color="error" onClick={confirmDelete}>
-            Excluir
-          </Button>
-        </DialogActions>
-      </Dialog>
-
-      {/* Resultado da detecção de padrões (Venda Inteligente) */}
+      {/* Resultado da detecção */}
       <Dialog open={Boolean(detectResult)} onClose={() => setDetectResult(null)} maxWidth="sm" fullWidth>
-        <DialogTitle>Resultado da detecção de padrões</DialogTitle>
+        <DialogTitle>Resultado da detecção</DialogTitle>
         <DialogContent>
           {detectResult && (
             <>
               <Typography variant="body2" sx={{ marginBottom: 2 }}>
-                {detectResult.candidatesEvaluated} candidato(s) avaliado(s), {detectResult.suggestionsCreated}{' '}
-                nova(s) sugestão(ões) criada(s) (inativa, revise abaixo na listagem).{' '}
-                {detectResult.aiUsed
-                  ? 'Refinado por IA (DeepSeek).'
-                  : 'IA não usada — só candidatos estatísticos.'}
+                {detectResult.candidatesEvaluated} par(es) passaram nos limiares de incidência e{' '}
+                {detectResult.suggestionsCreated} viraram sugestão.{' '}
+                {detectResult.outlierAnalysisApplied
+                  ? `Só entraram os pontos fora da curva: lift acima de ${Number(detectResult.liftThreshold).toFixed(1)}×.`
+                  : 'Poucos candidatos para analisar a distribuição — todos os aprovados foram mantidos.'}
               </Typography>
               {detectResult.aiError && (
                 <Alert severity="warning" sx={{ marginBottom: 2 }}>
@@ -598,32 +727,54 @@ export default function CrossSell() {
               )}
               {detectResult.suggestions.length === 0 ? (
                 <Typography variant="body2" sx={{ color: '#666666' }}>
-                  Nenhum padrão novo encontrado — pode ser falta de vendas com múltiplos produtos, ou os pares já
-                  estarem cadastrados.
+                  Nenhum padrão novo encontrado — os pares avaliados não se destacam o suficiente dos demais.
                 </Typography>
               ) : (
-                detectResult.suggestions.map((s, idx) => (
-                  <Box key={idx} sx={{ marginBottom: 1.5, paddingBottom: 1.5, borderBottom: '1px solid #eee' }}>
-                    <Typography variant="body2">
-                      <strong>
-                        {s.productAName} → {s.productBName}
-                      </strong>{' '}
-                      ({s.coOccurrence} venda(s) juntas, {(s.confidence * 100).toFixed(0)}% de confiança)
-                      {!s.created && ' — já existia'}
-                    </Typography>
-                    {s.description && (
-                      <Typography variant="caption" sx={{ color: '#666666' }}>
-                        {s.description}
+                <>
+                  <Typography variant="body2" sx={{ color: '#666666', marginBottom: 1 }}>
+                    As sugestões ficam salvas na seção "Padrões detectados" — você pode decidir agora ou depois.
+                  </Typography>
+                  {detectResult.suggestions.map((s, idx) => (
+                    <Box key={idx} sx={{ marginBottom: 1.5, paddingBottom: 1.5, borderBottom: '1px solid #e0e0e0' }}>
+                      <Typography variant="body2">
+                        <strong>
+                          {s.productAName} → {s.productBName}
+                        </strong>{' '}
+                        ({s.coOccurrence} venda(s) juntas, {(s.confidence * 100).toFixed(0)}% de confiança, lift{' '}
+                        {s.lift.toFixed(1)}×){!s.created && ' — já existia'}
                       </Typography>
-                    )}
-                  </Box>
-                ))
+                      {s.description && (
+                        <Typography variant="caption" sx={{ color: '#666666' }}>
+                          {s.description}
+                        </Typography>
+                      )}
+                    </Box>
+                  ))}
+                </>
               )}
             </>
           )}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setDetectResult(null)}>Fechar</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Exclusão */}
+      <Dialog open={deleteOpen} onClose={() => setDeleteOpen(false)}>
+        <DialogTitle>Excluir relação</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2">
+            Excluir a relação entre <strong>{deletingItem?.productName}</strong> e{' '}
+            <strong>{deletingItem?.complementaryProductName}</strong>? Ela pode voltar a ser sugerida numa próxima
+            detecção — para removê-la de vez, use "Descartar" na lista de padrões detectados.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteOpen(false)}>Cancelar</Button>
+          <Button color="error" variant="contained" onClick={confirmDelete}>
+            Excluir
+          </Button>
         </DialogActions>
       </Dialog>
 

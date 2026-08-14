@@ -5,34 +5,50 @@
 // permissões — diferente de Cupons/Giftback/Templates, que são exclusivos
 // do Administrador).
 //
-// `source` só é gravado como 'manual' por este CRUD: a "revisão de sugestões
-// automáticas baseadas em histórico de vendas" citada no FSD (6.4) depende
-// de um critério de "comprados juntos" que o FSD não define (frequência,
-// janela de tempo) — mesmo tipo de parâmetro sem padrão já tratado em outras
-// fases (ex.: rfm_criteria). Fica para quando esse critério for definido;
-// o schema já suporta 'suggested' quando isso acontecer.
+// O cadastro MANUAL de par complementar foi REMOVIDO em 14/08/2026 por
+// decisão do responsável do projeto (diverge do FSD 6.4, que o previa): na
+// prática ninguém sabe de cabeça quais pares valem a pena, e o formulário
+// competia com a detecção automática sem acrescentar informação. Todo par
+// novo nasce agora da detecção de padrões (product-affinity.service.js) e é
+// aceito ou descartado pelo usuário na tela de Cross-sell. Pares 'manual'
+// criados antes dessa mudança continuam funcionando normalmente — só não é
+// mais possível criar novos.
 
 const { crmPool } = require('../database/connection');
 
 const PG_UNIQUE_VIOLATION = '23505';
-const PG_FOREIGN_KEY_VIOLATION = '23503';
 
 function mapRow(row) {
   return {
     id: row.id,
     productId: row.product_id,
     productName: row.product_name,
+    productCode: row.product_code,
     complementaryProductId: row.complementary_product_id,
     complementaryProductName: row.complementary_product_name,
+    complementaryProductCode: row.complementary_product_code,
     source: row.source,
     active: row.active,
     createdBy: row.created_by,
     createdAt: row.created_at,
+    // Métricas da detecção (migration 040) — nulas em pares manuais e nos
+    // sugeridos antes dessa mudança.
+    coOccurrence: row.co_occurrence,
+    confidence: row.confidence !== null ? Number(row.confidence) : null,
+    lift: row.lift !== null ? Number(row.lift) : null,
+    detectedAt: row.detected_at,
+    dismissedAt: row.dismissed_at,
   };
 }
 
+// O código do Uniplus vai junto do nome porque o catálogo real tem dezenas
+// de produtos DIFERENTES com o mesmo nome (ex.: 17 itens chamados
+// "LANCHEIRA SESTINE", cada um uma referência) — sem o código, duas linhas
+// da lista de sugestões ficam indistinguíveis na tela.
 const BASE_SELECT = `
-  SELECT cp.*, p.name AS product_name, cpx.name AS complementary_product_name
+  SELECT cp.*,
+         p.name AS product_name, p.uniplus_id AS product_code,
+         cpx.name AS complementary_product_name, cpx.uniplus_id AS complementary_product_code
     FROM complementary_products cp
     JOIN products p ON p.id = cp.product_id
     JOIN products cpx ON cpx.id = cp.complementary_product_id
@@ -74,50 +90,32 @@ async function getActiveComplementsForProduct(productId) {
   return result.rows.map(mapRow);
 }
 
-async function createComplementaryProduct({ productId, complementaryProductId, createdBy }) {
-  if (!productId || !complementaryProductId) {
-    throw new Error('Selecione o produto e o produto complementar.');
-  }
-  if (Number(productId) === Number(complementaryProductId)) {
-    throw new Error('O produto complementar não pode ser o mesmo produto.');
-  }
-  if (!createdBy) {
-    throw new Error('createComplementaryProduct requer createdBy.');
-  }
-
-  try {
-    const result = await crmPool.query(
-      `INSERT INTO complementary_products (product_id, complementary_product_id, source, created_by)
-       VALUES ($1, $2, 'manual', $3)
-       RETURNING id`,
-      [productId, complementaryProductId, createdBy]
-    );
-    return getComplementaryProductById(result.rows[0].id);
-  } catch (err) {
-    if (err.code === PG_UNIQUE_VIOLATION) {
-      throw new Error('Esse par de produtos já está cadastrado como complementar.');
-    }
-    if (err.code === PG_FOREIGN_KEY_VIOLATION) {
-      throw new Error('Produto não encontrado.');
-    }
-    throw err;
-  }
-}
-
 // Cria uma sugestão gerada pelo motor de detecção de padrões (Venda
 // Inteligente, escopo novo — ver product-affinity.service.js). Sempre
-// inativa (pendente de revisão do Admin/Acesso Limitado na própria tela de
+// inativa (pendente de decisão do Admin/Acesso Limitado na própria tela de
 // Cross-sell) e sem created_by (gerada pelo sistema, não por um usuário —
 // migration 038 tornou a coluna nullable para este caso). Ignora
 // silenciosamente pares já existentes (qualquer origem) em vez de lançar
 // erro — o motor roda em lote, sobre muitos candidatos.
-async function createSuggestedComplementaryProduct({ productId, complementaryProductId }) {
+//
+// As métricas (co-ocorrência, confiança, lift) são gravadas junto para que a
+// lista detectada continue explicável e revisitável depois — antes da
+// migration 040 elas só existiam no diálogo exibido logo após a detecção.
+async function createSuggestedComplementaryProduct({
+  productId,
+  complementaryProductId,
+  coOccurrence = null,
+  confidence = null,
+  lift = null,
+}) {
   try {
     const result = await crmPool.query(
-      `INSERT INTO complementary_products (product_id, complementary_product_id, source, active, created_by)
-       VALUES ($1, $2, 'suggested', false, NULL)
+      `INSERT INTO complementary_products
+         (product_id, complementary_product_id, source, active, created_by,
+          co_occurrence, confidence, lift, detected_at)
+       VALUES ($1, $2, 'suggested', false, NULL, $3, $4, $5, NOW())
        RETURNING id`,
-      [productId, complementaryProductId]
+      [productId, complementaryProductId, coOccurrence, confidence, lift]
     );
     return getComplementaryProductById(result.rows[0].id);
   } catch (err) {
@@ -126,6 +124,55 @@ async function createSuggestedComplementaryProduct({ productId, complementaryPro
     }
     throw err;
   }
+}
+
+// Ativa ou descarta várias sugestões de uma vez (ação em lote da tela de
+// Cross-sell). Uma única query por operação em vez de N chamadas do
+// frontend. Devolve quantas linhas foram efetivamente afetadas — ids
+// inexistentes são simplesmente ignorados.
+async function bulkSetActive(ids, active) {
+  const numericIds = (ids || []).map(Number).filter((id) => Number.isInteger(id));
+  if (numericIds.length === 0) return 0;
+
+  // Ativar também limpa o descarte: uma oferta em uso não pode continuar
+  // marcada como descartada.
+  const result = await crmPool.query(
+    `UPDATE complementary_products
+        SET active = $1,
+            dismissed_at = CASE WHEN $1 THEN NULL ELSE dismissed_at END
+      WHERE id = ANY($2::int[])`,
+    [active, numericIds]
+  );
+  return result.rowCount;
+}
+
+// Descartar NÃO apaga a linha: marca a decisão. Apagar faria o motor de
+// detecção sugerir o mesmo par de novo na próxima execução (ele só ignora
+// pares que já existem na tabela), e o "descartar" viraria um "adiar"
+// eterno. Ver migration 041.
+async function bulkDismiss(ids) {
+  const numericIds = (ids || []).map(Number).filter((id) => Number.isInteger(id));
+  if (numericIds.length === 0) return 0;
+
+  const result = await crmPool.query(
+    `UPDATE complementary_products
+        SET dismissed_at = NOW(), active = false
+      WHERE id = ANY($1::int[]) AND dismissed_at IS NULL`,
+    [numericIds]
+  );
+  return result.rowCount;
+}
+
+// Volta atrás no descarte — a sugestão retorna para a lista de pendentes.
+async function bulkRestore(ids) {
+  const numericIds = (ids || []).map(Number).filter((id) => Number.isInteger(id));
+  if (numericIds.length === 0) return 0;
+
+  const result = await crmPool.query(
+    'UPDATE complementary_products SET dismissed_at = NULL WHERE id = ANY($1::int[])',
+    [numericIds]
+  );
+  return result.rowCount;
 }
 
 async function toggleActive(id) {
@@ -152,8 +199,10 @@ module.exports = {
   listComplementaryProducts,
   getComplementaryProductById,
   getActiveComplementsForProduct,
-  createComplementaryProduct,
   createSuggestedComplementaryProduct,
+  bulkSetActive,
+  bulkDismiss,
+  bulkRestore,
   toggleActive,
   deleteComplementaryProduct,
 };

@@ -43,6 +43,45 @@ const QUICK_LINKS = [
   },
 ];
 
+// Blocos do card de Venda Inteligente: cada um abre a tela dedicada já no
+// grupo correspondente (via location.state.expandGroup). As chaves batem com
+// as do motor de situações (backend/app/services/sales-situations.service.js).
+const SMART_SALES_TILES = [
+  {
+    key: 'critico',
+    label: 'Críticos',
+    color: '#b72c2c',
+    caption: (overview) => `${formatCurrency(overview.totals.criticoStockValue)} em estoque`,
+  },
+  {
+    key: 'queimaEstoque',
+    label: 'Queima de estoque',
+    color: '#d46a2b',
+    caption: () => 'sem giro há 60+ dias',
+  },
+  {
+    key: 'margemBaixa',
+    label: 'Margem baixa',
+    color: '#dba617',
+    caption: () => 'abaixo da média do grupo',
+  },
+  {
+    key: 'parado',
+    label: 'Parados c/ estoque',
+    color: '#4a5fa8',
+    caption: () => 'saldo > 0, sem venda 30d',
+  },
+  {
+    key: 'crossSellPending',
+    // O grupo de cross-sell tem outra chave na tela dedicada (não vem do
+    // motor de situações, e sim de `complementary_products`).
+    expandGroup: 'crossSell',
+    label: 'Cross-sell pendente',
+    color: '#2d7a5c',
+    caption: () => 'sugestões a revisar',
+  },
+];
+
 function formatPercent(value) {
   return value === null || value === undefined ? 'Não disponível' : `${(value * 100).toFixed(1)}%`;
 }
@@ -81,7 +120,8 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const [smartSalesCount, setSmartSalesCount] = useState(null);
+  const [smartSalesOverview, setSmartSalesOverview] = useState(null);
+  const [smartSalesFailed, setSmartSalesFailed] = useState(false);
 
   const buildFilterParams = useCallback(() => {
     const params = new URLSearchParams();
@@ -122,21 +162,21 @@ export default function Dashboard() {
     loadDashboard();
   }, [loadDashboard]);
 
-  // Card de resumo da Venda Inteligente (Parte 3) — só a contagem de
-  // sugestões pendentes; a gestão da oportunidade acontece na tela
-  // dedicada (/venda-inteligente), não aqui.
+  // Card de resumo da Venda Inteligente (remodelado em 14/08/2026): números
+  // por situação de prejuízo vindos do motor de situações
+  // (/sales-insights/overview), cada um clicável abrindo a tela dedicada já
+  // no grupo certo, mais o destaque de capital parado com ação direta.
   useEffect(() => {
     async function loadSmartSalesSummary() {
       try {
-        const response = await fetch('/complementary-products?active=false&source=suggested', {
-          credentials: 'include',
-        });
-        if (response.ok) {
-          const data = await response.json();
-          setSmartSalesCount((data.complementaryProducts || []).length);
-        }
+        const response = await fetch('/sales-insights/overview', { credentials: 'include' });
+        if (!response.ok) throw new Error('Falha ao carregar o resumo.');
+        setSmartSalesOverview(await response.json());
       } catch {
-        // Card de resumo não é essencial — o Dashboard funciona sem ele.
+        // Card de resumo não é essencial — o resto do Dashboard funciona sem
+        // ele. Mas precisa sair do estado de carregamento, senão o card fica
+        // com um spinner eterno em vez de dizer o que houve.
+        setSmartSalesFailed(true);
       }
     }
     loadSmartSalesSummary();
@@ -224,37 +264,106 @@ export default function Dashboard() {
         </Alert>
       )}
 
-      <Card
-        sx={{
-          padding: 3,
-          marginBottom: 3,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          flexWrap: 'wrap',
-          gap: 2,
-          backgroundColor: '#0f2d7b',
-          color: '#ffffff',
-        }}
-      >
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+      <Card sx={{ padding: 3, marginBottom: 3, backgroundColor: '#0f2d7b', color: '#ffffff' }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, marginBottom: 2 }}>
           <AutoAwesomeOutlinedIcon fontSize="large" />
           <Box>
             <Typography variant="h6" sx={{ fontWeight: 700 }}>
               Venda Inteligente
             </Typography>
             <Typography variant="body2" sx={{ opacity: 0.85 }}>
-              {smartSalesCount === null
-                ? 'Carregando oportunidades...'
-                : smartSalesCount === 0
-                ? 'Nenhuma oportunidade pendente no momento.'
-                : `${smartSalesCount} oportunidade(s) de produtos comprados juntos aguardando revisão.`}
+              {smartSalesFailed
+                ? 'Não foi possível carregar o resumo agora.'
+                : smartSalesOverview === null
+                ? 'Analisando vendas, estoque e custos...'
+                : 'Produtos que precisam de decisão, agrupados por situação. Clique num número para abrir a lista.'}
             </Typography>
           </Box>
         </Box>
-        <Button variant="contained" sx={{ backgroundColor: '#ffffff', color: '#0f2d7b' }} onClick={() => navigate('/venda-inteligente')}>
-          Ver oportunidades
-        </Button>
+
+        {smartSalesFailed ? (
+          <Button
+            variant="contained"
+            sx={{ backgroundColor: '#ffffff', color: '#0f2d7b' }}
+            onClick={() => navigate('/venda-inteligente')}
+          >
+            Abrir Venda Inteligente
+          </Button>
+        ) : smartSalesOverview === null ? (
+          <CircularProgress size={24} sx={{ color: '#ffffff' }} />
+        ) : (
+          <>
+            <Grid container spacing={2} sx={{ marginBottom: 2 }}>
+              {SMART_SALES_TILES.map((tile) => (
+                <Grid item xs={6} sm={4} md={2.4} key={tile.key}>
+                  <Box
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => navigate('/venda-inteligente', { state: { expandGroup: tile.expandGroup || tile.key } })}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        navigate('/venda-inteligente', { state: { expandGroup: tile.expandGroup || tile.key } });
+                      }
+                    }}
+                    sx={{
+                      cursor: 'pointer',
+                      height: '100%',
+                      padding: 2,
+                      borderRadius: 2,
+                      borderTop: `4px solid ${tile.color}`,
+                      backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                      transition: 'background-color 120ms',
+                      '&:hover, &:focus-visible': { backgroundColor: 'rgba(255, 255, 255, 0.2)' },
+                    }}
+                  >
+                    <Typography variant="h4" sx={{ fontWeight: 700 }}>
+                      {smartSalesOverview.counts[tile.key]}
+                    </Typography>
+                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                      {tile.label}
+                    </Typography>
+                    <Typography variant="caption" sx={{ opacity: 0.8 }}>
+                      {tile.caption(smartSalesOverview)}
+                    </Typography>
+                  </Box>
+                </Grid>
+              ))}
+            </Grid>
+
+            <Box
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: 2,
+                padding: 2,
+                borderRadius: 2,
+                backgroundColor: 'rgba(255, 255, 255, 0.12)',
+              }}
+            >
+              <Typography variant="body2">
+                {smartSalesOverview.totals.stagnantStockValue > 0 ? (
+                  <>
+                    <strong>Maior oportunidade:</strong>{' '}
+                    {formatCurrency(smartSalesOverview.totals.stagnantStockValue)} imobilizados em produtos sem giro —
+                    uma queima a −40% recupera cerca de {formatCurrency(smartSalesOverview.totals.burnRecoveryEstimate)}.
+                  </>
+                ) : (
+                  <>Nenhum capital relevante parado em estoque no momento.</>
+                )}
+              </Typography>
+              <Button
+                variant="contained"
+                sx={{ backgroundColor: '#ffffff', color: '#0f2d7b' }}
+                onClick={() => navigate('/venda-inteligente', { state: { expandGroup: 'queimaEstoque' } })}
+              >
+                Criar campanha de queima
+              </Button>
+            </Box>
+          </>
+        )}
       </Card>
 
       {loading ? (

@@ -355,6 +355,8 @@ async function syncProducts(context) {
       name: trimOrNull(row.nome) || `Produto Uniplus ${row.id}`,
       category: trimOrNull(row.categoria_nome),
       price: toNumberOrNull(row.preco),
+      cost_price: toNumberOrNull(row.precocusto),
+      average_cost: toNumberOrNull(row.customedio),
       // 05-mapeamento-sincronizacao.md: `active` = `produto.inativo = 0`.
       active: !isFlagTrue(row.inativo),
     })),
@@ -363,12 +365,14 @@ async function syncProducts(context) {
 
   const upserted = await bulkUpsert({
     table: 'products',
-    columns: ['uniplus_id', 'name', 'category', 'price', 'active'],
+    columns: ['uniplus_id', 'name', 'category', 'price', 'cost_price', 'average_cost', 'active'],
     conflictColumn: 'uniplus_id',
     updateAssignments: `
       name = EXCLUDED.name,
       category = EXCLUDED.category,
       price = EXCLUDED.price,
+      cost_price = EXCLUDED.cost_price,
+      average_cost = EXCLUDED.average_cost,
       active = EXCLUDED.active,
       synced_at = NOW(),
       updated_at = NOW()

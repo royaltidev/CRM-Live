@@ -314,7 +314,8 @@ export default function VendaInteligente() {
               </Box>
             ) : slowMovers.length === 0 ? (
               <Typography variant="body2" sx={{ color: '#666666' }}>
-                Nenhum produto ativo cadastrado.
+                Nenhum produto com saldo em estoque encontrado — itens com saldo zerado não entram
+                nesta lista. Se o catálogo não está vazio, verifique a sincronização de estoque.
               </Typography>
             ) : (
               slowMovers.map((group) => (

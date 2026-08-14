@@ -92,21 +92,34 @@ async function getPurchaseJourneys() {
 // Sem limite de itens por categoria (diferente de `getPurchaseJourneys`):
 // aqui o caso de uso é auditoria de catálogo parado, então a lista
 // completa por categoria é o que interessa, não um top N.
+//
+// Só entram produtos com SALDO EM ESTOQUE > 0 (último snapshot conhecido em
+// `stock_snapshots`, remodelagem de 14/08/2026): item zerado não representa
+// capital parado nem decisão a tomar — inclusive produto sem NENHUM snapshot
+// fica de fora (estoque desconhecido é tratado como sem saldo, mesmo critério
+// conservador do INNER JOIN).
 async function getSlowMovingProducts({ startDate, endDate } = {}) {
   const start = startDate ? new Date(startDate) : null;
   const end = endDate ? new Date(endDate) : null;
 
   const result = await crmPool.query(
-    `SELECT p.category, p.id AS product_id, p.name AS product_name,
+    `WITH latest_stock AS (
+       SELECT DISTINCT ON (product_id) product_id, quantity
+       FROM stock_snapshots
+       ORDER BY product_id, synced_at DESC, id DESC
+     )
+     SELECT p.category, p.id AS product_id, p.name AS product_name,
+            ls.quantity AS stock_quantity,
             COUNT(DISTINCT CASE WHEN s.id IS NOT NULL THEN si.sale_id END)::int AS sales_count
      FROM products p
+     JOIN latest_stock ls ON ls.product_id = p.id AND ls.quantity > 0
      LEFT JOIN sale_items si ON si.product_id = p.id
      LEFT JOIN sales s
        ON s.id = si.sale_id
       AND ($1::timestamp IS NULL OR s.sale_date >= $1)
       AND ($2::timestamp IS NULL OR s.sale_date <= $2)
      WHERE p.active = true
-     GROUP BY p.category, p.id, p.name
+     GROUP BY p.category, p.id, p.name, ls.quantity
      ORDER BY p.category ASC, sales_count ASC, p.name ASC`,
     [start, end]
   );
@@ -115,6 +128,7 @@ async function getSlowMovingProducts({ startDate, endDate } = {}) {
     productId: row.product_id,
     productName: row.product_name,
     salesCount: row.sales_count,
+    stockQuantity: row.stock_quantity,
   }));
 }
 

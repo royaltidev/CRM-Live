@@ -122,6 +122,8 @@ async function fetchProdutos() {
       p.ean,
       p.nome,
       p.preco,
+      p.precocusto,
+      p.customedio,
       p.inativo,
       p.idhierarquia,
       h.nome AS categoria_nome

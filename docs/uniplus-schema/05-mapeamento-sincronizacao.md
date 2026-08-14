@@ -63,6 +63,10 @@ WHERE entidade.representante <> 0
 - `category` = `hierarquia.nome`, via `produto.idhierarquia = hierarquia.id`
   (LEFT JOIN — produto sem hierarquia fica com `category = null`)
 - `price` = `produto.preco`
+- `cost_price` = `produto.precocusto` (adicionado na remodelagem da Venda
+  Inteligente, 14/08/2026 — migration 039)
+- `average_cost` = `produto.customedio` (idem; preferido sobre `cost_price`
+  nos cálculos de margem por ser o custo médio ponderado)
 - `active` = `produto.inativo = 0`
 
 ## stock_snapshots ← saldoestoque

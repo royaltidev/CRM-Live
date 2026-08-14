@@ -1,7 +1,80 @@
 # Status do Projeto — CRM Live
 
 **Última atualização:** 14/08/2026
-**Atualizado por:** Fase 11 — Parte 2 (Desempenho por campanha) implementada e testada; Venda Inteligente — Parte 2 (jornadas de compra + itens sem venda) implementada e testada; Venda Inteligente — Parte 1 (motor de detecção de produtos comprados juntos) implementada e testada; Fase 11 — Parte 1 (Dashboard geral de relacionamento) implementada e testada; Fase 10 — Parte 3 (ações de tratamento de NPS) implementada e testada, Fase 10 concluída; alerta de nota baixa por WhatsApp ao Administrador implementado e testado; Parte 2 (tela de gestão de NPS) implementada e testada; Parte 1 (captura de resposta de NPS) implementada e testada; Fase 9 (Caixa de entrada, atendimento e encaminhamento de lead) implementada e testada, Fase 9 concluída; Fase 8 — Parte 5 (Campanhas) implementada e testada, Fase 8 concluída; Parte 4 (Cross-sell) implementada e testada; Parte 1 (Templates) implementada e testada; validação da Fase 7 em ambiente real
+**Atualizado por:** Venda Inteligente — Parte 3 (card no Dashboard + tela dedicada) implementada e testada; Fase 11 — Parte 2 (Desempenho por campanha) implementada e testada; Venda Inteligente — Parte 2 (jornadas de compra + itens sem venda) implementada e testada; Venda Inteligente — Parte 1 (motor de detecção de produtos comprados juntos) implementada e testada; Fase 11 — Parte 1 (Dashboard geral de relacionamento) implementada e testada; Fase 10 — Parte 3 (ações de tratamento de NPS) implementada e testada, Fase 10 concluída; alerta de nota baixa por WhatsApp ao Administrador implementado e testado; Parte 2 (tela de gestão de NPS) implementada e testada; Parte 1 (captura de resposta de NPS) implementada e testada; Fase 9 (Caixa de entrada, atendimento e encaminhamento de lead) implementada e testada, Fase 9 concluída; Fase 8 — Parte 5 (Campanhas) implementada e testada, Fase 8 concluída; Parte 4 (Cross-sell) implementada e testada; Parte 1 (Templates) implementada e testada; validação da Fase 7 em ambiente real
+
+## Venda Inteligente — Parte 3: Card no Dashboard + tela dedicada — 14/08/2026
+
+**Objetivo:** dar visibilidade às duas partes anteriores (produtos
+comprados juntos, jornadas de compra, itens sem venda), reunindo tudo numa
+tela só, com um card de resumo no Dashboard levando até ela — exatamente
+como pedido pelo responsável ("um card de resumo e o usuário clicando nele
+entra na tela simples ao máximo e com mais informações e gestão da
+oportunidade"). **Parte 3 concluída e testada.**
+
+### Decisões de design
+
+- **"Gestão da oportunidade" só se aplica de fato aos produtos comprados
+  juntos** (Parte 1): é a única das três seções com um ciclo de vida real
+  (pendente → ativada ou descartada). Jornadas de compra e itens sem venda
+  (Parte 2) continuam informativos, sem ação — bate com o que o próprio
+  responsável descreveu pra cada um na hora do pedido original.
+- **Ativar/descartar reaproveita os endpoints do Cross-sell já existentes**
+  (`PATCH .../toggle-active`, `DELETE ...`) — sem duplicar lógica. Ativar
+  uma sugestão aqui também a torna visível na tela de Cross-sell (mesma
+  linha, mesma tabela) — testado e confirmado.
+- **Contagem do card do Dashboard:** `complementary_products` com
+  `active=false AND source='suggested'` — só sugestões PENDENTES contam
+  (uma sugestão descartada é excluída, uma ativada some da contagem
+  naturalmente por já não estar mais `active=false`). Exigiu adicionar
+  filtro `source` em `listComplementaryProducts`
+  (`complementary-products.service.js`), antes só `productId`/`active`.
+- **Itens sem venda no card/tela:** chip fica vermelho quando
+  `salesCount === 0` (produto nunca vendido) — destaque visual pro caso
+  mais crítico do relatório, sem exigir nenhum clique a mais.
+
+### Implementação
+
+- `backend/app/services/complementary-products.service.js` +
+  `.../controllers/complementary-products.controller.js` — filtro `source`
+  opcional em `listComplementaryProducts`/`GET /complementary-products`.
+- `frontend/src/views/VendaInteligente/VendaInteligente.jsx` (novo) — três
+  seções (produtos comprados juntos com Ativar/Descartar + botão
+  "Detectar padrões automaticamente" reaproveitado da tela de Cross-sell;
+  jornadas de compra; itens sem venda com filtro de período opcional).
+  Rota `/venda-inteligente`, item de menu "Venda Inteligente" (sem
+  `adminOnly`).
+- `frontend/src/views/Dashboard.jsx` — card de resumo (contagem de
+  sugestões pendentes, carregada à parte do resto do dashboard pra não
+  travar as métricas se falhar) com botão "Ver oportunidades" levando à
+  tela dedicada.
+
+### Testes realizados
+
+- `node -c` nos arquivos backend alterados; `vite build` completo sem
+  erros.
+- Smoke test: `GET /complementary-products?active=false&source=suggested`
+  retorna 401 sem sessão.
+- Teste real de UI (extensão Chrome, sessão Admin): card do Dashboard
+  mostrou a contagem certa (1) com uma sugestão de teste inserida
+  diretamente no banco; clique em "Ver oportunidades" levou à tela nova;
+  "Ativar" fez a sugestão sumir da lista da Venda Inteligente E aparecer
+  como oferta ativa na tela de Cross-sell (confirmado navegando até lá);
+  "Descartar" removeu outra sugestão de teste (confirmado por query que a
+  linha foi excluída de `complementary_products`, não só desativada);
+  jornadas de compra mostrou o empty state correto (sem venda multi-item
+  real); itens sem venda mostrou os 4 produtos reais corretamente
+  agrupados por categoria. Card do Dashboard voltou a mostrar "Nenhuma
+  oportunidade pendente" após a limpeza. Todo dado de teste removido ao
+  final, confirmado por query (`SELECT * FROM complementary_products WHERE
+  source = 'suggested'` retornou vazio).
+
+### Pendências desta iniciativa (Parte 4)
+
+- Criação automática de RASCUNHOS de cupons/giftbacks/réguas/campanhas a
+  partir das oportunidades detectadas — sempre pendente de revisão e
+  confirmação explícita do Admin, nunca ativado sozinho (decisão já
+  confirmada com o responsável antes da Parte 1).
 
 ## Fase 11 — Parte 2: Desempenho por campanha — 14/08/2026
 

@@ -23,13 +23,14 @@ function handleKnownErrors(err, res) {
   return false;
 }
 
-// GET /complementary-products?productId=&active=
+// GET /complementary-products?productId=&active=&source=
 async function listComplementaryProducts(req, res) {
   try {
-    const { productId, active } = req.query;
+    const { productId, active, source } = req.query;
     const items = await complementaryProductsService.listComplementaryProducts({
       productId: productId || null,
       active: active !== undefined ? active : null,
+      source: source || null,
     });
     res.json({ complementaryProducts: items });
   } catch (err) {

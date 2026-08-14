@@ -35,6 +35,7 @@ import SwapHorizOutlinedIcon from '@mui/icons-material/SwapHorizOutlined';
 import SendOutlinedIcon from '@mui/icons-material/SendOutlined';
 import SentimentSatisfiedAltOutlinedIcon from '@mui/icons-material/SentimentSatisfiedAltOutlined';
 import InsightsOutlinedIcon from '@mui/icons-material/InsightsOutlined';
+import AutoAwesomeOutlinedIcon from '@mui/icons-material/AutoAwesomeOutlined';
 import { useAuth } from '../contexts/AuthContext';
 
 const DRAWER_WIDTH = 260;
@@ -55,6 +56,7 @@ const MENU_ITEMS = [
   { label: 'Cupons', path: '/cupons', icon: ConfirmationNumberOutlinedIcon },
   { label: 'Giftback / Cashback', path: '/giftback', icon: CardGiftcardOutlinedIcon },
   { label: 'Cross-sell', path: '/cross-sell', icon: SwapHorizOutlinedIcon },
+  { label: 'Venda Inteligente', path: '/venda-inteligente', icon: AutoAwesomeOutlinedIcon },
   { label: 'Campanhas', path: '/campanhas', icon: SendOutlinedIcon },
   { label: 'Desempenho de Campanhas', path: '/desempenho-campanhas', icon: InsightsOutlinedIcon },
   { label: 'Gestão de NPS', path: '/nps', icon: SentimentSatisfiedAltOutlinedIcon },

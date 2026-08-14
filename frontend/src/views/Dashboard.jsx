@@ -11,6 +11,7 @@ import {
   Alert,
 } from '@mui/material';
 import DownloadOutlinedIcon from '@mui/icons-material/DownloadOutlined';
+import AutoAwesomeOutlinedIcon from '@mui/icons-material/AutoAwesomeOutlined';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -80,6 +81,8 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  const [smartSalesCount, setSmartSalesCount] = useState(null);
+
   const buildFilterParams = useCallback(() => {
     const params = new URLSearchParams();
     if (startDate) params.set('startDate', startDate);
@@ -118,6 +121,26 @@ export default function Dashboard() {
   useEffect(() => {
     loadDashboard();
   }, [loadDashboard]);
+
+  // Card de resumo da Venda Inteligente (Parte 3) — só a contagem de
+  // sugestões pendentes; a gestão da oportunidade acontece na tela
+  // dedicada (/venda-inteligente), não aqui.
+  useEffect(() => {
+    async function loadSmartSalesSummary() {
+      try {
+        const response = await fetch('/complementary-products?active=false&source=suggested', {
+          credentials: 'include',
+        });
+        if (response.ok) {
+          const data = await response.json();
+          setSmartSalesCount((data.complementaryProducts || []).length);
+        }
+      } catch {
+        // Card de resumo não é essencial — o Dashboard funciona sem ele.
+      }
+    }
+    loadSmartSalesSummary();
+  }, []);
 
   const handleExport = async () => {
     try {
@@ -200,6 +223,39 @@ export default function Dashboard() {
           {error}
         </Alert>
       )}
+
+      <Card
+        sx={{
+          padding: 3,
+          marginBottom: 3,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: 2,
+          backgroundColor: '#0f2d7b',
+          color: '#ffffff',
+        }}
+      >
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          <AutoAwesomeOutlinedIcon fontSize="large" />
+          <Box>
+            <Typography variant="h6" sx={{ fontWeight: 700 }}>
+              Venda Inteligente
+            </Typography>
+            <Typography variant="body2" sx={{ opacity: 0.85 }}>
+              {smartSalesCount === null
+                ? 'Carregando oportunidades...'
+                : smartSalesCount === 0
+                ? 'Nenhuma oportunidade pendente no momento.'
+                : `${smartSalesCount} oportunidade(s) de produtos comprados juntos aguardando revisão.`}
+            </Typography>
+          </Box>
+        </Box>
+        <Button variant="contained" sx={{ backgroundColor: '#ffffff', color: '#0f2d7b' }} onClick={() => navigate('/venda-inteligente')}>
+          Ver oportunidades
+        </Button>
+      </Card>
 
       {loading ? (
         <Box sx={{ display: 'flex', justifyContent: 'center', padding: 4 }}>

@@ -38,7 +38,7 @@ const BASE_SELECT = `
     JOIN products cpx ON cpx.id = cp.complementary_product_id
 `;
 
-async function listComplementaryProducts({ productId = null, active = null } = {}) {
+async function listComplementaryProducts({ productId = null, active = null, source = null } = {}) {
   const conditions = [];
   const params = [];
 
@@ -49,6 +49,10 @@ async function listComplementaryProducts({ productId = null, active = null } = {
   if (active !== null && active !== undefined) {
     params.push(active === true || active === 'true');
     conditions.push(`cp.active = $${params.length}`);
+  }
+  if (source) {
+    params.push(source);
+    conditions.push(`cp.source = $${params.length}`);
   }
 
   const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';

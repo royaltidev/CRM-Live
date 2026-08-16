@@ -103,6 +103,12 @@ três tabelas de origem (todas usam sequências próprias começando em 1):
   a origem "âncora"), **exceto notas canceladas** (`cancelamento IS NOT
   NULL` — decisão de 10/08/2026: nota cancelada não é venda real). A coluna
   `status` não teve seus valores confirmados e não é filtrada.
+- **`tipodocumento = 'S'`** — bug corrigido em 16/08/2026 (ver
+  `04-colunas-confirmadas.md`): sem este filtro, notas de entrada (compra,
+  `tipodocumento = 'E'`, 501 das 527 notas) estavam sendo sincronizadas
+  como venda. Filtro é whitelist (`= 'S'`, não `<> 'E'`) para deixar de fora
+  também `CT` (5 notas, significado ainda não confirmado) e qualquer valor
+  futuro desconhecido.
 - `sale_date` = `notafiscal.datahoraemissao`
 - `total_amount` = `notafiscal.valortotalnota`
 - `customer_id` resolvido via `notafiscal.identidade → entidade.id →

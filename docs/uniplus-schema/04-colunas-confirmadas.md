@@ -82,3 +82,37 @@ complementares.
   bloqueada (ver `docs/STATUS.md` e `docs/PLANO.md`) — falta decidir se
   quer que eu já atualize esses dois documentos para refletir o
   desbloqueio.
+
+## `notafiscal.tipodocumento` — confirmado em 16/08/2026 (Radar da Loja)
+
+Valores reais, via VPN Tailscale direto no banco de produção:
+
+```sql
+SELECT tipodocumento, COUNT(*) AS qtde, SUM(valortotalnota) AS valor_total
+FROM notafiscal
+WHERE cancelamento IS NULL
+GROUP BY tipodocumento;
+```
+
+| tipodocumento | qtde | valor_total  | significado             |
+|---------------|------|--------------|--------------------------|
+| E             | 501  | 932.763,91   | entrada (compra)         |
+| S             | 21   | 7.711,71     | saída (venda)            |
+| CT             | 5    | 2.177,26     | não confirmado — hipótese: Conhecimento de Transporte |
+
+**Bug real corrigido:** `fetchNotasFiscais` (`uniplus.repository.js`) não
+filtrava por `tipodocumento`, sincronizando as 527 notas (compra + venda +
+CT) como se fossem todas venda. Corrigido para `tipodocumento = 'S'`
+(whitelist, não `<> 'E'`, para não deixar `CT` ou qualquer valor futuro
+desconhecido passar sem confirmação). Ver `05-mapeamento-sincronizacao.md`,
+seção "sales", origem 1.
+
+**Hipótese anterior descartada:** o handoff da sessão anterior (nuvem, sem
+acesso a banco) apostava em `notafiscalitem.tipo` como o campo E/S. Os
+valores reais dessa coluna são `'P'` (4.931 linhas) e `'S'` (106 linhas) —
+não é a mesma coisa; hipótese não confirmada é que seja classificação
+fiscal do item (Produto/Serviço), não usada em nenhum filtro por ora.
+
+**Ainda pendente:** significado de `CT` — como só 5 notas e R$ 2.177,26,
+não é prioridade, mas continua fora de `sales` até confirmar (o filtro
+`= 'S'` já garante isso).

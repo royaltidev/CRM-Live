@@ -1,7 +1,75 @@
 # Status do Projeto — CRM Live
 
-**Última atualização:** 14/08/2026
-**Atualizado por:** remodelagem completa da Venda Inteligente (5 partes: custo no sync, motor de situações, tela por situação de prejuízo, card do Dashboard, cross-sell por outliers de lift) implementada e testada; conexão com o Uniplus editável pelo Administrador (tela de Configurações, "Trocar Servidor") implementada e testada; conexão real com o Uniplus configurada e validada em ambiente de desenvolvimento; Venda Inteligente — Parte 3 (card no Dashboard + tela dedicada) implementada e testada; Fase 11 — Parte 2 (Desempenho por campanha) implementada e testada; Venda Inteligente — Parte 2 (jornadas de compra + itens sem venda) implementada e testada; Venda Inteligente — Parte 1 (motor de detecção de produtos comprados juntos) implementada e testada; Fase 11 — Parte 1 (Dashboard geral de relacionamento) implementada e testada; Fase 10 — Parte 3 (ações de tratamento de NPS) implementada e testada, Fase 10 concluída; alerta de nota baixa por WhatsApp ao Administrador implementado e testado; Parte 2 (tela de gestão de NPS) implementada e testada; Parte 1 (captura de resposta de NPS) implementada e testada; Fase 9 (Caixa de entrada, atendimento e encaminhamento de lead) implementada e testada, Fase 9 concluída; Fase 8 — Parte 5 (Campanhas) implementada e testada, Fase 8 concluída; Parte 4 (Cross-sell) implementada e testada; Parte 1 (Templates) implementada e testada; validação da Fase 7 em ambiente real
+**Última atualização:** 16/08/2026
+**Atualizado por:** bug real corrigido — sincronização de vendas contava nota de compra como venda (ver seção "Radar da Loja" abaixo); remodelagem completa da Venda Inteligente (5 partes: custo no sync, motor de situações, tela por situação de prejuízo, card do Dashboard, cross-sell por outliers de lift) implementada e testada; conexão com o Uniplus editável pelo Administrador (tela de Configurações, "Trocar Servidor") implementada e testada; conexão real com o Uniplus configurada e validada em ambiente de desenvolvimento; Venda Inteligente — Parte 3 (card no Dashboard + tela dedicada) implementada e testada; Fase 11 — Parte 2 (Desempenho por campanha) implementada e testada; Venda Inteligente — Parte 2 (jornadas de compra + itens sem venda) implementada e testada; Venda Inteligente — Parte 1 (motor de detecção de produtos comprados juntos) implementada e testada; Fase 11 — Parte 1 (Dashboard geral de relacionamento) implementada e testada; Fase 10 — Parte 3 (ações de tratamento de NPS) implementada e testada, Fase 10 concluída; alerta de nota baixa por WhatsApp ao Administrador implementado e testado; Parte 2 (tela de gestão de NPS) implementada e testada; Parte 1 (captura de resposta de NPS) implementada e testada; Fase 9 (Caixa de entrada, atendimento e encaminhamento de lead) implementada e testada, Fase 9 concluída; Fase 8 — Parte 5 (Campanhas) implementada e testada, Fase 8 concluída; Parte 4 (Cross-sell) implementada e testada; Parte 1 (Templates) implementada e testada; validação da Fase 7 em ambiente real
+
+## Radar da Loja — início e bug real corrigido — 16/08/2026
+
+Início de um novo módulo pedido pelo responsável ("Radar da Loja"): prevenção
+de perdas, oportunidades de lucro, previsão de giro, ciclo atípico de
+produto, compras anômalas, estoque parado e cross-sell — cruzando produtos,
+vendas, estoque e clientes numa visão que o acompanhamento manual não dá.
+Pesquisa técnica inicial (métodos, ferramentas, lacunas de dado por
+objetivo) feita numa sessão anterior (nuvem, sem acesso a banco); esta
+sessão retomou o trabalho já com acesso real ao Postgres do Uniplus, via
+**VPN Tailscale** (mesh WireGuard) até o computador da loja — solução
+adotada por não depender de configurar porta no roteador nem lidar com
+CGNAT, ao contrário da VPN nativa do Windows.
+
+**Bug real corrigido (prioridade sobre construir qualquer coisa nova do
+Radar):** `fetchNotasFiscais` (`uniplus.repository.js`) sincronizava TODAS
+as notas fiscais como venda, sem filtrar por `notafiscal.tipodocumento`.
+Validado contra o banco real: `'E'` = entrada/compra (501 notas, R$
+932.763,91), `'S'` = saída/venda (21 notas, R$ 7.711,71), `'CT'` = não
+confirmado, hipótese Conhecimento de Transporte (5 notas, R$ 2.177,26).
+Notas de compra estavam inflando `sales`/`sale_items`
+(`source_type='nota_fiscal'`) em ~R$ 935 mil — quase um terço do
+faturamento total reportado — contaminando Dashboard, RFM, e toda a Venda
+Inteligente (margem, situações, previsão de giro).
+
+**Hipótese anterior descartada:** a sessão de pesquisa apostava em
+`notafiscalitem.tipo` como o campo E/S — não é; essa coluna guarda outra
+coisa (valores reais `'P'`/`'S'`, hipótese não confirmada: Produto/Serviço,
+não usada em nenhum filtro).
+
+Correção aplicada:
+- Filtro `AND tipodocumento = 'S'` em `fetchNotasFiscais` (whitelist, não
+  `<> 'E'`, pra deixar `CT` de fora também até confirmar seu significado).
+- Documentado em `docs/uniplus-schema/04-colunas-confirmadas.md` e
+  `05-mapeamento-sincronizacao.md`.
+- **Histórico já sincronizado corrigido** (não bastava rodar o sync de
+  novo — ele só faz upsert, nunca remove registro que sumiu da origem):
+  apagados manualmente, numa transação, 506 vendas indevidas (`nf-<id>`
+  com `tipodocumento` E ou CT) + 4.957 `sale_items` associados, sem tocar
+  nas 5 vendas `DEMO-SALE-*` (dados de demonstração) nem nas 21 reais.
+  162 clientes tinham `customer_id` preenchido nessas vendas indevidas —
+  `first_purchase_at`/`last_purchase_at`/ticket médio/frequência
+  recalculados para eles (100 desses 162 ficaram sem nenhuma venda real
+  restante e tiveram os agregados zerados — o histórico de compra deles
+  inteiro era fabricado por este bug).
+- Faturamento total corrigido: de R$ 2.938.237,18 para **R$ 2.003.296,01**
+  (`nota_fiscal` real: 26 registros incluindo os 5 demo, R$ 9.032,61).
+- RFM não precisou de recálculo — está `pending_configuration` (critérios
+  ainda não definidos pelo Administrador), não estava ativo.
+
+**Conexão Uniplus do ambiente de dev:** "Trocar Servidor" (Configurações)
+foi apontado para o IP Tailscale do computador da loja
+(`100.70.26.48:5432`) em vez do IP da LAN (`192.168.1.35`, inacessível
+fora da rede da loja) — mudança persistida em `system_settings`, só afeta
+este ambiente de desenvolvimento, não o deploy real da loja (Windows
+separado, na própria LAN).
+
+**Pendências abertas do Radar da Loja** (ver documento de pesquisa e
+handoff da sessão anterior para os métodos completos por objetivo):
+- Validar preenchimento real de `notafiscalitem.precocusto` (custo) antes
+  de usar em Oportunidades de Lucro.
+- Levantar colunas de `movimentoestoque` (19.295 linhas, não sincronizada)
+  para Prevenção de Perdas.
+- Definir `system_settings.loss_prevention.max_seller_discount_percent`
+  (ainda sem valor).
+- Confirmar significado de `CT` em `notafiscal.tipodocumento`.
+- App de contagem física para celular (pré-requisito de calibração do
+  modelo de discrepância de estoque).
 
 ## Venda Inteligente — remodelagem completa (5 partes) — 14/08/2026
 

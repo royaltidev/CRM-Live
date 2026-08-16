@@ -188,6 +188,15 @@ async function fetchSaldoEstoque(filialId) {
 // 05-mapeamento-sincronizacao.md). A coluna `status` não teve seus valores
 // confirmados contra dados reais e permanece sem filtro (ver comentário no
 // cabeçalho do arquivo sobre validação em produção).
+// `tipodocumento = 'S'` — BUG CORRIGIDO em 16/08/2026: valores reais
+// confirmados contra o banco (`SELECT tipodocumento, COUNT(*), SUM(valortotalnota)
+// FROM notafiscal WHERE cancelamento IS NULL GROUP BY tipodocumento`) são
+// 'E' (501 notas, entrada/compra), 'S' (21 notas, saída/venda) e 'CT' (5,
+// não confirmado — hipótese: Conhecimento de Transporte). Sem este filtro,
+// notas de ENTRADA (compra) estavam sendo sincronizadas como venda,
+// inflando `sales`/`sale_items` (source_type='nota_fiscal') em ~R$ 936 mil
+// (932 de 943 mil do total sincronizado eram, na verdade, compra). Ver
+// docs/uniplus-schema/04-colunas-confirmadas.md e 05-mapeamento-sincronizacao.md.
 async function fetchNotasFiscais() {
   const { rows } = await uniplusPool.query(`
     SELECT
@@ -209,6 +218,7 @@ async function fetchNotasFiscais() {
       datainclusao
     FROM notafiscal
     WHERE cancelamento IS NULL
+      AND tipodocumento = 'S'
     ORDER BY id
   `);
   return rows;

@@ -250,8 +250,14 @@ async function getSituations() {
 async function getOverview() {
   const [products, pendingCrossSell] = await Promise.all([
     fetchProductSnapshots(),
+    // Pendente = sugestão automática ainda não ativada E ainda não
+    // descartada. O `dismissed_at IS NULL` é essencial desde a migration
+    // 041: sem ele, sugestões que o usuário já descartou continuariam
+    // contando como decisão pendente no card do Dashboard, para sempre.
     crmPool.query(
-      `SELECT COUNT(*)::int AS count FROM complementary_products WHERE source = 'suggested' AND active = false`
+      `SELECT COUNT(*)::int AS count
+         FROM complementary_products
+        WHERE source = 'suggested' AND active = false AND dismissed_at IS NULL`
     ),
   ]);
 

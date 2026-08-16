@@ -186,7 +186,10 @@ export default function VendaInteligente() {
       if (await handleAuthFailure(response)) return;
       if (!response.ok) throw new Error('Falha ao carregar sugestões de cross-sell.');
       const data = await response.json();
-      setCrossSellSuggestions(data.complementaryProducts || []);
+      // Sugestão descartada não é decisão pendente — o endpoint filtra por
+      // `active`, mas não conhece o descarte (migration 041), então o corte
+      // é feito aqui.
+      setCrossSellSuggestions((data.complementaryProducts || []).filter((item) => !item.dismissedAt));
     } catch (err) {
       setError(err.message || 'Erro ao carregar sugestões de cross-sell.');
     } finally {

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   Box,
   Container,
@@ -82,6 +82,81 @@ const SMART_SALES_TILES = [
   },
 ];
 
+// A ação em destaque acompanha o que os números mostram, em vez de ser
+// sempre a mesma: sem itens em queima, oferecer "criar campanha de queima"
+// levaria o usuário a um grupo vazio. A ordem é a da urgência — prejuízo
+// ativo antes de capital travado, capital travado antes de preço errado.
+function buildHighlight(overview) {
+  const { counts, totals } = overview;
+
+  if (counts.critico > 0) {
+    return {
+      message: (
+        <>
+          <strong>Prioridade:</strong> {counts.critico} produto(s) em situação crítica, com{' '}
+          {formatCurrency(totals.criticoStockValue)} em estoque — margem negativa, parados há muito tempo ou com
+          estoque para mais de 6 meses.
+        </>
+      ),
+      actionLabel: 'Revisar críticos',
+      expandGroup: 'critico',
+    };
+  }
+
+  if (counts.queimaEstoque > 0) {
+    return {
+      message: (
+        <>
+          <strong>Maior oportunidade:</strong> {formatCurrency(totals.stagnantStockValue)} imobilizados em produtos sem
+          giro — uma queima a −40% recupera cerca de {formatCurrency(totals.burnRecoveryEstimate)}.
+        </>
+      ),
+      actionLabel: 'Criar campanha de queima',
+      expandGroup: 'queimaEstoque',
+    };
+  }
+
+  if (counts.margemBaixa > 0) {
+    return {
+      message: (
+        <>
+          <strong>Maior oportunidade:</strong> {counts.margemBaixa} produto(s) vendendo com margem bem abaixo da média
+          do próprio grupo — o sistema já calculou o preço sugerido de cada um.
+        </>
+      ),
+      actionLabel: 'Ver preços sugeridos',
+      expandGroup: 'margemBaixa',
+    };
+  }
+
+  if (counts.crossSellPending > 0) {
+    return {
+      message: (
+        <>
+          <strong>Maior oportunidade:</strong> {counts.crossSellPending} sugestão(ões) de produtos comprados juntos
+          aguardando sua decisão.
+        </>
+      ),
+      actionLabel: 'Revisar sugestões',
+      expandGroup: 'crossSell',
+    };
+  }
+
+  if (counts.parado > 0) {
+    return {
+      message: (
+        <>
+          <strong>Atenção:</strong> {counts.parado} produto(s) com saldo e sem venda há mais de 30 dias.
+        </>
+      ),
+      actionLabel: 'Ver produtos parados',
+      expandGroup: 'parado',
+    };
+  }
+
+  return { message: <>Nenhuma situação exigindo decisão no momento.</>, actionLabel: null, expandGroup: null };
+}
+
 function formatPercent(value) {
   return value === null || value === undefined ? 'Não disponível' : `${(value * 100).toFixed(1)}%`;
 }
@@ -122,6 +197,11 @@ export default function Dashboard() {
 
   const [smartSalesOverview, setSmartSalesOverview] = useState(null);
   const [smartSalesFailed, setSmartSalesFailed] = useState(false);
+
+  const highlight = useMemo(
+    () => (smartSalesOverview ? buildHighlight(smartSalesOverview) : null),
+    [smartSalesOverview]
+  );
 
   const buildFilterParams = useCallback(() => {
     const params = new URLSearchParams();
@@ -265,9 +345,9 @@ export default function Dashboard() {
       )}
 
       <Card sx={{ padding: 3, marginBottom: 3, backgroundColor: '#0f2d7b', color: '#ffffff' }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, marginBottom: 2 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, marginBottom: 2, flexWrap: 'wrap' }}>
           <AutoAwesomeOutlinedIcon fontSize="large" />
-          <Box>
+          <Box sx={{ flex: 1, minWidth: 240 }}>
             <Typography variant="h6" sx={{ fontWeight: 700 }}>
               Venda Inteligente
             </Typography>
@@ -279,6 +359,17 @@ export default function Dashboard() {
                 : 'Produtos que precisam de decisão, agrupados por situação. Clique num número para abrir a lista.'}
             </Typography>
           </Box>
+          {smartSalesOverview && (
+            <Typography variant="caption" sx={{ opacity: 0.75, alignSelf: 'flex-end' }}>
+              Calculado agora, sobre os dados da última sincronização ·{' '}
+              {new Date(smartSalesOverview.generatedAt).toLocaleString('pt-BR', {
+                day: '2-digit',
+                month: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+              })}
+            </Typography>
+          )}
         </Box>
 
         {smartSalesFailed ? (
@@ -343,24 +434,16 @@ export default function Dashboard() {
                 backgroundColor: 'rgba(255, 255, 255, 0.12)',
               }}
             >
-              <Typography variant="body2">
-                {smartSalesOverview.totals.stagnantStockValue > 0 ? (
-                  <>
-                    <strong>Maior oportunidade:</strong>{' '}
-                    {formatCurrency(smartSalesOverview.totals.stagnantStockValue)} imobilizados em produtos sem giro —
-                    uma queima a −40% recupera cerca de {formatCurrency(smartSalesOverview.totals.burnRecoveryEstimate)}.
-                  </>
-                ) : (
-                  <>Nenhum capital relevante parado em estoque no momento.</>
-                )}
-              </Typography>
-              <Button
-                variant="contained"
-                sx={{ backgroundColor: '#ffffff', color: '#0f2d7b' }}
-                onClick={() => navigate('/venda-inteligente', { state: { expandGroup: 'queimaEstoque' } })}
-              >
-                Criar campanha de queima
-              </Button>
+              <Typography variant="body2">{highlight.message}</Typography>
+              {highlight.actionLabel && (
+                <Button
+                  variant="contained"
+                  sx={{ backgroundColor: '#ffffff', color: '#0f2d7b' }}
+                  onClick={() => navigate('/venda-inteligente', { state: { expandGroup: highlight.expandGroup } })}
+                >
+                  {highlight.actionLabel}
+                </Button>
+              )}
             </Box>
           </>
         )}

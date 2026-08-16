@@ -96,6 +96,27 @@ acaso — **lift** é a métrica que separa associação real de coincidência.
   linhas de sugestão ficavam indistinguíveis. O código passou a acompanhar
   o nome em toda a tela de Cross-sell.
 
+### Ajuste de fechamento (15/08/2026)
+
+Ao conferir o card do Dashboard contra o esboço aprovado, dois itens não
+tinham entrado e um bug apareceu:
+
+- **Carimbo de cálculo** ausente — `generatedAt` já vinha da API, só não era
+  exibido.
+- **Ação em destaque era fixa** em "Criar campanha de queima". O pedido
+  original falava em "botões de ação... vendo opções pertinentes e de acordo
+  com o que os números mostram" — o esboço simplificou para um botão só e a
+  implementação seguiu o esboço. Passou a acompanhar a urgência (crítico >
+  queima > margem baixa > cross-sell > parado) e a sumir quando não há nada
+  a decidir; antes levava a um grupo vazio quando não havia itens em queima.
+- **Bug da migration 041:** o resumo do Dashboard e o grupo de cross-sell da
+  tela contavam/listavam sugestões DESCARTADAS como pendentes, porque
+  filtravam só por `active = false` — condição que passou a ser verdadeira
+  também para as descartadas. Na prática, descartar não tinha efeito visível
+  nessas duas telas. Corrigido com `dismissed_at IS NULL` na consulta do
+  resumo e o filtro equivalente na tela. Ciclo pendente → descartada →
+  restaurada validado contra a contagem (2 → 1 → 0). Commit `854157f`.
+
 ### Implementação
 
 - `backend/app/database/migrations/039_add_cost_to_products.js` —

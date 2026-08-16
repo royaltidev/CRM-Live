@@ -1,7 +1,173 @@
 # Status do Projeto — CRM Live
 
 **Última atualização:** 14/08/2026
-**Atualizado por:** conexão com o Uniplus editável pelo Administrador (tela de Configurações, "Trocar Servidor") implementada e testada; conexão real com o Uniplus configurada e validada em ambiente de desenvolvimento; Venda Inteligente — Parte 3 (card no Dashboard + tela dedicada) implementada e testada; Fase 11 — Parte 2 (Desempenho por campanha) implementada e testada; Venda Inteligente — Parte 2 (jornadas de compra + itens sem venda) implementada e testada; Venda Inteligente — Parte 1 (motor de detecção de produtos comprados juntos) implementada e testada; Fase 11 — Parte 1 (Dashboard geral de relacionamento) implementada e testada; Fase 10 — Parte 3 (ações de tratamento de NPS) implementada e testada, Fase 10 concluída; alerta de nota baixa por WhatsApp ao Administrador implementado e testado; Parte 2 (tela de gestão de NPS) implementada e testada; Parte 1 (captura de resposta de NPS) implementada e testada; Fase 9 (Caixa de entrada, atendimento e encaminhamento de lead) implementada e testada, Fase 9 concluída; Fase 8 — Parte 5 (Campanhas) implementada e testada, Fase 8 concluída; Parte 4 (Cross-sell) implementada e testada; Parte 1 (Templates) implementada e testada; validação da Fase 7 em ambiente real
+**Atualizado por:** remodelagem completa da Venda Inteligente (5 partes: custo no sync, motor de situações, tela por situação de prejuízo, card do Dashboard, cross-sell por outliers de lift) implementada e testada; conexão com o Uniplus editável pelo Administrador (tela de Configurações, "Trocar Servidor") implementada e testada; conexão real com o Uniplus configurada e validada em ambiente de desenvolvimento; Venda Inteligente — Parte 3 (card no Dashboard + tela dedicada) implementada e testada; Fase 11 — Parte 2 (Desempenho por campanha) implementada e testada; Venda Inteligente — Parte 2 (jornadas de compra + itens sem venda) implementada e testada; Venda Inteligente — Parte 1 (motor de detecção de produtos comprados juntos) implementada e testada; Fase 11 — Parte 1 (Dashboard geral de relacionamento) implementada e testada; Fase 10 — Parte 3 (ações de tratamento de NPS) implementada e testada, Fase 10 concluída; alerta de nota baixa por WhatsApp ao Administrador implementado e testado; Parte 2 (tela de gestão de NPS) implementada e testada; Parte 1 (captura de resposta de NPS) implementada e testada; Fase 9 (Caixa de entrada, atendimento e encaminhamento de lead) implementada e testada, Fase 9 concluída; Fase 8 — Parte 5 (Campanhas) implementada e testada, Fase 8 concluída; Parte 4 (Cross-sell) implementada e testada; Parte 1 (Templates) implementada e testada; validação da Fase 7 em ambiente real
+
+## Venda Inteligente — remodelagem completa (5 partes) — 14/08/2026
+
+**Pedido do responsável do projeto:** o módulo, do jeito que estava, "não
+informava nada para um usuário leigo". As críticas foram específicas: (1) o
+Dashboard tinha só um bloco com um botão, sem números nem categorização;
+(2) a tela era "um monte de nomes de produtos", agrupada por grupo de
+mercadoria em vez de por situação de prejuízo, e listas só deveriam abrir
+para o usuário ESCOLHER itens sobre os quais agir; (3) item com saldo
+zerado não podia aparecer em lista de "parado"; (4) as sugestões de
+cross-sell não permitiam agir na própria tela, o resultado da detecção não
+podia ser revisto, e pares com 2 vendas em conjunto — iguais a centenas de
+outros — não são padrão, são o comum; (5) faltavam análises de queima de
+estoque, reajuste de margem e um grupo crítico, com critérios embasados na
+literatura de varejo.
+
+### Critérios adotados (pesquisa breve, conforme pedido)
+
+Baseados nas práticas consagradas de gestão de varejo: agir sobre estoque
+envelhecido cedo (60–90 dias) custa muito menos que agir tarde; as métricas
+de referência são sell-through, cobertura de estoque (weeks of supply) e
+GMROI. No cross-sell, a literatura de market basket analysis é explícita
+quanto ao ponto levantado pelo responsável: suporte/co-ocorrência bruta
+engana, porque produtos individualmente populares aparecem juntos por
+acaso — **lift** é a métrica que separa associação real de coincidência.
+
+### Decisões de design
+
+- **Agrupamento por situação, não por categoria.** Cinco grupos: Crítico
+  (margem negativa OU parado 90d+ com valor imobilizado acima da média dos
+  estagnados OU cobertura de estoque > 180 dias), Queima de estoque (saldo
+  > 0 e sem venda 60d+, com preços escalonados −25%/−40%/−50% sinalizando
+  quando ficam abaixo do custo), Margem baixa (margem mais de 10 p.p.
+  abaixo da média do próprio grupo de mercadoria, com preço sugerido =
+  custo ÷ (1 − margem média do grupo)) e Parado com estoque (saldo > 0 e
+  sem venda 30d+). Os três grupos de GIRO são mutuamente exclusivos nessa
+  ordem de prioridade; **margem baixa é independente** e pode se sobrepor —
+  o mesmo produto pode estar parado E com preço errado, são duas decisões
+  diferentes.
+- **Custo: nenhuma tabela nova do Uniplus.** `produto.precocusto` e
+  `produto.customedio` já estavam na tabela que a sincronização lê — bastou
+  trazer as duas colunas (migration 039). `customedio` é o preferido nos
+  cálculos (custo médio ponderado), com fallback pra `precocusto`. **Zero é
+  tratado como "custo desconhecido"**, não como custo real: o Uniplus usa
+  `0.000` como default da coluna.
+- **Saldo zerado sai de todas as listas.** Passa a usar o último snapshot de
+  `stock_snapshots`. Produto sem NENHUM snapshot também fica de fora —
+  estoque desconhecido é tratado como sem saldo (critério conservador do
+  INNER JOIN), com a mensagem de lista vazia avisando que pode ser falta de
+  sincronização de estoque, e não catálogo vazio.
+- **Listas só abrem para escolher.** Grupo fechado mostra só o resumo
+  (quantidade + valores). Ao expandir, cada linha tem checkbox e a seção
+  ganha ações em lote: criar campanha pré-preenchida (navega pra Campanhas
+  com o nome e a lista de produtos via `location.state`), exportar CSV
+  (formato pt-BR, com colunas específicas por situação — preços de queima
+  ou preços sugeridos) e copiar lista.
+- **Cross-sell por outliers de lift, sem limiar fixo.** Este foi um ajuste
+  explícito do responsável sobre o esboço apresentado: ele NÃO aceitou
+  "lift ≥ 2" como regra. O motor calcula a distribuição dos lifts dos
+  candidatos aprovados nos limiares de incidência (co-ocorrência ≥ 5,
+  confiança ≥ 30%, lift > 1) e sugere **apenas os pontos fora da curva**,
+  pelo critério de Tukey (acima de Q3 + 1,5 × IQR). O corte passa a se
+  adaptar ao próprio catálogo: numa loja onde o normal é lift ~1,2 um lift
+  2 é excepcional; noutra onde o normal já é 3, não é. Amostra menor que 8
+  candidatos não tem distribuição pra analisar — nesse caso todos os
+  aprovados são mantidos, e a resposta sinaliza
+  `outlierAnalysisApplied: false`.
+- **Cadastro manual de par removido** (formulário + `POST
+  /complementary-products`). Diverge do FSD 6.4, que previa esse cadastro —
+  registrado aqui como decisão do responsável: na prática ninguém sabe de
+  cabeça quais pares valem a pena, e o formulário competia com a detecção
+  sem acrescentar informação. Pares `manual` criados antes continuam
+  funcionando normalmente; só não é mais possível criar novos.
+- **Detecção persistida e revisitável.** As métricas (co-ocorrência,
+  confiança, lift, data) passam a ser gravadas na própria linha da sugestão
+  (migration 040) — antes o resultado só existia no diálogo que aparecia
+  logo depois de clicar no botão, exatamente a falta que o responsável
+  apontou ("não tem opção de ver de novo").
+
+### Dois problemas encontrados durante a implementação
+
+- **"Descartar" não descartava.** A ação apagava a linha, e como o motor só
+  ignora pares que JÁ EXISTEM em `complementary_products`, o par apagado
+  voltava a ser sugerido na detecção seguinte, indefinidamente — o botão
+  adiava em vez de descartar. Corrigido com `dismissed_at` (migration 041):
+  a decisão é gravada, o par sai das listas e passa a ser ignorado pelo
+  motor automaticamente (a checagem de par existente já cobre o caso), com
+  opção de restaurar na tela.
+- **Produtos homônimos.** O catálogo real tem 17 produtos DIFERENTES com o
+  nome exato "LANCHEIRA SESTINE" (e 10 "MOCHETE G SESTINE") — referências
+  distintas cadastradas com nome genérico. Sem o código do Uniplus, duas
+  linhas de sugestão ficavam indistinguíveis. O código passou a acompanhar
+  o nome em toda a tela de Cross-sell.
+
+### Implementação
+
+- `backend/app/database/migrations/039_add_cost_to_products.js` —
+  `cost_price` e `average_cost` em `products`.
+- `backend/app/database/migrations/040_add_metrics_to_complementary_products.js`
+  — `co_occurrence`, `confidence`, `lift`, `detected_at`. Também removeu as
+  **1.163 sugestões inativas** geradas pelo critério antigo: automáticas,
+  nunca revisadas e reproduzíveis por uma nova detecção. Pares ativos e de
+  origem `manual` preservados.
+- `backend/app/database/migrations/041_add_dismissed_at_to_complementary_products.js`
+  — `dismissed_at` + índice.
+- `backend/app/integrations/uniplus/uniplus.repository.js` — `fetchProdutos`
+  traz `precocusto` e `customedio`.
+- `backend/app/services/sync.service.js` — upsert de produtos grava os dois
+  custos.
+- `backend/app/services/sales-situations.service.js` (novo) — motor de
+  classificação, `getSituations()` (detalhe) e `getOverview()` (resumo do
+  Dashboard, já com a contagem de cross-sell pendente pra evitar uma
+  segunda chamada do frontend).
+- `backend/app/services/sales-insights.service.js` — `getSlowMovingProducts`
+  passa a exigir saldo > 0.
+- `backend/app/services/product-affinity.service.js` — lift, limiares novos,
+  `quantile`/`computeLiftOutlierThreshold` (exportados pra teste).
+- `backend/app/services/complementary-products.service.js` — métricas
+  persistidas, `bulkSetActive`/`bulkDismiss`/`bulkRestore`, código do
+  produto na listagem; `createComplementaryProduct` (manual) removido.
+- `GET /sales-insights/situations`, `GET /sales-insights/overview`,
+  `PATCH /complementary-products/bulk-active`,
+  `PATCH /complementary-products/bulk-dismiss`. Rotas de lote declaradas
+  ANTES das rotas com `:id`, senão "bulk" seria capturado como id.
+- `frontend/src/views/VendaInteligente/VendaInteligente.jsx` — reescrita.
+- `frontend/src/views/CrossSell/CrossSell.jsx` — reescrita.
+- `frontend/src/views/Dashboard.jsx` — card novo.
+- `frontend/src/views/Campanhas/Campanhas.jsx` — recebe o pré-preenchimento
+  vindo da Venda Inteligente.
+
+### Testes
+
+- Classificação de situações: 10 casos sintéticos (margem negativa,
+  estagnado caro vs. barato, nunca vendeu, cobertura alta, saldo zero fora
+  de todos os grupos, degraus de queima abaixo/acima do custo, preço
+  sugerido, ordenação).
+- Outliers de lift: quantis conferidos contra a definição do numpy;
+  distribuição realista (só os destaques passam), distribuição uniforme
+  (ninguém é outlier) e catálogo de lift alto (3,2 deixa de ser
+  excepcional quando o normal já é ~3).
+- **Dados reais no container:** motor de situações encontrou R$ 250,6 mil
+  parados (405 críticos / 764 queima / 572 margem baixa). Cross-sell: 190
+  candidatos aprovados nos limiares → **10 sugestões** (contra 1.163 do
+  critério antigo), e as 10 são conjuntos escolares da mesma coleção
+  (mochila + lancheira + estojo MAXLOG, SESTINE, DENLEX) com 5–6 vendas
+  juntas e 83–100% de confiança. Ciclo descartar → restaurar validado, com
+  confirmação de que o par descartado não reaparece como candidato.
+- Rotas novas respondem 401 sem autenticação; `POST
+  /complementary-products` responde 404 (removida).
+
+### Revisão
+
+Codex CLI indisponível — cota da conta esgotada ("try again at Sep 10th,
+2026"), mesma situação já registrada desde a Fase 8 Parte 1. Cada uma das 5
+partes passou pelo `/code-review` interno em nível alto como substituto,
+com correção antes do commit. Cinco problemas reais encontrados e
+corrigidos: capital parado somando produtos críticos que ainda vendem
+normalmente; spinner eterno no card do Dashboard quando a API falha;
+tabelas renderizando centenas de linhas de uma vez (limitadas a 50, com
+seleção e CSV cobrindo o grupo inteiro); e os dois descritos acima
+("descartar" e homônimos). Vale revisão retroativa do Codex quando a cota
+voltar.
+
+### Commits
+
+`eed7bca` (A), `4b51df8` (B), `76fbc3a` (C), `52beb7f` (D), `e294039` (E).
 
 ## Conexão com o Uniplus editável pelo Administrador ("Trocar Servidor") — 14/08/2026
 
@@ -1885,9 +2051,28 @@ seguidos de integração manual (rotas, menu, dados de demonstração, testes).
 
 ## Fase atual
 
+> **Atenção:** esta seção e a de "Próximo passo recomendado" abaixo ficaram
+> paradas na Fase 7 enquanto o projeto avançava. **A fonte de verdade sobre
+> progresso são as seções datadas no TOPO deste arquivo** (a mais recente
+> primeiro). O que sobrou de útil aqui embaixo são os checklists de
+> pré-produção por fase, que continuam válidos.
+
+**Situação real em 14/08/2026:** Fases 1 a 10 concluídas; Fase 11 (relatórios
+e dashboards) com Partes 1 e 2 concluídas; Venda Inteligente remodelada por
+completo (5 partes); conexão com o Uniplus editável pelo Administrador e
+validada contra o banco real.
+
+<details>
+<summary>Texto original desta seção (Fase 7, 10/08/2026) — mantido por histórico</summary>
+
 **Fase 7 — Réguas de relacionamento (automações): concluída em 10/08/2026.**
 
+</details>
+
 ## Próximo passo recomendado
+
+> Conteúdo abaixo desatualizado (ver aviso acima) — as Fases 8, 9 e 10 já
+> foram concluídas. Os checklists de pré-produção seguem válidos.
 
 Entre as fases não iniciadas, a próxima sequencial é a **Fase 8 — Campanhas, modelos de mensagem, cupons, giftback e uploads**:
 - CRUD completo de modelos de mensagem (templates), incluindo upload de imagem — hoje só existem os templates de demonstração semeados na Fase 7

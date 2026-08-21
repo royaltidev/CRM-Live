@@ -30,7 +30,16 @@ da lista curada proposta em cima do levantamento bruto de
 ## dav
 `id`, `codigo`, `idfilial`, `idrepresentante`, `idcliente`, `status`, `valor`,
 `data`, `aprovado`, `datacancelamento`, `idnotafiscal`, `desconto`,
-`datainclusao`
+`datainclusao`, `tipodocumento`
+
+**`tipodocumento`** confirmado em produção (16/08/2026, dono do projeto):
+valores existentes na base são `1` (Pré-venda), `2` (Orçamento), `4` (Pedido
+de Venda), `6` (Pedido de Faturamento), `7` (Orçamento de Faturamento) —
+`SELECT tipodocumento, COUNT(*) FROM dav GROUP BY tipodocumento` não
+retornou nenhum outro valor. É este campo, não `aprovado`, que determina se
+um `dav` conta como venda (ver `system_settings` chave
+`piloto_automatico.dav_tipos_considerados_venda`) — `aprovado` é fluxo de
+aprovação, conceito diferente.
 
 ## davitem
 `id`, `iddav`, `idproduto`, `quantidade`, `preco`, `total`, `desconto`,
@@ -63,6 +72,22 @@ complementares.
 `id`, `data`, `filial`, `tipo`, `pdv`, `valorbruto`, `valorliquido`,
 `numeronfce`, `cliente`, `consumidornome`, `consumidorcpfcnpj`, `vendedor`,
 `statusnfce`
+
+## operacao
+Tabela-base por trás de `operacao_nfce_view` (confirmado via `pg_get_viewdef`,
+16/08/2026) — a trigger de tempo real do Piloto Automático da Loja e a
+consulta pontual por id (`fetchOperacaoNfceById`) usam a tabela diretamente,
+não a view. Colunas confirmadas em uso:
+`id`, `data`, `filial`, `tipo`, `pdv`, `valorliquido`, `modelonfce`,
+`cliente`, `consumidornome`, `consumidorcpfcnpj`, `cancelado`,
+`vendaabortada`, `erroprocessamento`, `chaveacessonfce`
+
+**Sinal de venda confirmada:** `tipo > 0 AND modelonfce = '65' AND cancelado
+= 0 AND vendaabortada = 0 AND erroprocessamento = 0 AND chaveacessonfce IS
+NOT NULL` — validado contra dado real (16/08/2026): as combinações de
+`statusnfce`/`statusprocessamento` que são 100% canceladas ficam corretamente
+fora desse filtro só por causa de `cancelado`, sem precisar decodificar o
+significado numérico de `statusnfce`/`statusprocessamento`.
 
 ## Pendências — resolvidas em 08/08/2026
 

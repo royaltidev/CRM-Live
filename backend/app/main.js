@@ -38,6 +38,7 @@ const { startMessageQueueJob } = require('./jobs/message-queue.job');
 const { startUniplusSyncJob } = require('./jobs/uniplus-sync.job');
 const { startAutomationRulesJob } = require('./jobs/automation-rules.job');
 const { startCampaignsJob } = require('./jobs/campaigns.job');
+const { startRealtimeSaleListenerJob } = require('./jobs/realtime-sale-listener.job');
 
 const app = express();
 
@@ -299,4 +300,11 @@ app.listen(settings.port, () => {
   // Inicia o disparo periódico de campanhas agendadas cuja hora já chegou
   // (a cada 60s) — campaigns.service.js#dispatchDueCampaigns.
   startCampaignsJob();
+
+  // Piloto Automático da Loja — sinal rápido de venda nova (LISTEN no banco
+  // do Uniplus + poller de segurança). Ver backend/app/jobs/realtime-sale-
+  // listener.job.js e o artifact "Piloto Automático da Loja". Requer as
+  // triggers criadas no banco do Uniplus (não neste repositório — vivem no
+  // lado deles); sem elas, o LISTEN só fica ocioso, sem quebrar o boot.
+  startRealtimeSaleListenerJob();
 });

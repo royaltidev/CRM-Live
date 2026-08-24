@@ -89,6 +89,56 @@ NOT NULL` — validado contra dado real (16/08/2026): as combinações de
 fora desse filtro só por causa de `cancelado`, sem precisar decodificar o
 significado numérico de `statusnfce`/`statusprocessamento`.
 
+## movimentoestoque
+`id`, `idfilial`, `data`, `datahora`, `idproduto`, `variacao`,
+`tipodocumento`, `quantidadeentrada`, `quantidadesaida`, `valortotal`,
+`cancelado`, `idoriginal`, `iditemoriginal`, `observacao`, `precocusto`,
+`customedio`, `currenttimemillis`, `idlocalestoque`, `idlote`, `idcme`,
+`custototal`, `precoultimacompra`, `custoaquisicao`, `pontoequilibrio`
+
+Ledger de movimentação de estoque (append-only) — base do objetivo 1
+(perdas), 4 (ciclo atípico) e 5 (compras anômalas vs. giro) do Radar da
+Loja. Validado em produção (24/08/2026, dono do projeto, via cópia de
+teste).
+
+**`idproduto`** tratado como `produto.id` direto (não código) — mesma
+convenção já confirmada para `saldoestoque.idproduto`/`dav.idcliente`/
+`dav.idrepresentante` (colunas com prefixo `id`, diferente de
+`operacao.cliente`/`item.vendedor`/`item.produto`, que são código).
+
+**`idoriginal`/`iditemoriginal`** confirmados como `operacao.id`/`item.id`
+quando `tipodocumento = 1` (venda) — testado com ids reais: 5 `idoriginal`
+distintos bateram exatamente com 5 `operacao.id`, e os `iditemoriginal`
+correspondentes bateram exatamente com os `item.id` daquelas operações
+(zero linhas via `dav`/`davitem` para os mesmos ids, como esperado). Para
+os demais `tipodocumento`, o alvo de `idoriginal` não foi mapeado — pode
+não ser `operacao`/`item`.
+
+**`cancelado`** é flag `0`/`1` literal (confirmado: `17500` linhas com `0`,
+`1795` com `1` — não há outros valores), diferente da convenção "`0` = falso,
+`<>0` = verdadeiro" assumida (ainda não validada) para outras tabelas.
+
+**`tipodocumento`** — distribuição real (volume total 19.295 linhas,
+30/09/2020 a 20/01/2026):
+
+| tipodocumento | qtd | Significado |
+|---|---|---|
+| `1` | 11.427 | Venda (saída) — confirmado via `operacao`/`item`. |
+| `2` | 6.329 | Majoritariamente entrada (compra?) — não confirmado com o dono, tem uma parcela de saída (~4%) ainda não explicada. |
+| `3` | 279 | "Estorno do movimento anterior da devolução N" (texto em `observacao`) — reversão de um movimento de devolução; a devolução original não foi localizada com esse `tipodocumento` explicitamente. |
+| `52` | 61 | "PRODUTOS QUE FORAM LEVADOS PELO REPRESENTANTE" — saída, `valortotal = 0` (produto sai do estoque sem virar receita registrada; candidato a sinal de perda/objetivo 1, não é venda). |
+| `-15` | 1.189 | "ACERTO DE ESTOQUE POR IMPORTAÇÃO DE DADOS" — carga inicial da migração para o Uniplus, evento único em 30/09/2020. **Excluir de qualquer análise de padrão comercial** (não é evento de negócio real). |
+| `-6` | 3 | "PRODUTO COM ESTOQUE NEGATIVO" / "SAIDA DUPLICADA ESTOQUE NEGATIVO" — correção manual/automática de falha de controle de estoque. Sinal de interesse para objetivo 1, não é movimento comercial normal. |
+| `-3` | 7 | "estoque zerado" / "SEM ESTOQUE" — mesma natureza de `-6`. |
+
+**Pendência aberta:** o que exatamente é `tipodocumento = 2` (entrada
+majoritária — provável compra, mas não confirmado) e onde fica a
+devolução original que o `tipodocumento = 3` estorna. Não bloqueia a
+sincronização (que grava tudo cru, sem interpretar), mas bloqueia a
+camada de análise que for consumir `stock_movements` depois — precisa de
+mais uma rodada de validação com o dono antes de, por exemplo, tratar
+`tipodocumento = 2` como "compra" em qualquer cálculo de objetivo 5.
+
 ## Pendências — resolvidas em 08/08/2026
 
 1. **Direção do vínculo DAV × Nota Fiscal — confirmado.** A regra de

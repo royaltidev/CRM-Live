@@ -451,6 +451,99 @@ async function syncStockSnapshots(context) {
 }
 
 // ---------------------------------------------------------------------------
+// Etapa 5b — stock_movements ← movimentoestoque (Radar da Loja: objetivos 1,
+// 4 e 5 — perdas, ciclo atípico de venda, compras anômalas vs. giro)
+// ---------------------------------------------------------------------------
+
+// Tamanho do lote por execução — movimentoestoque é ledger crescente (~19 mil
+// linhas em 4,5 anos numa loja, 24/08/2026), sync incremental por id evita
+// reler tudo a cada 15 min. 5000 é folgado para o volume observado.
+const STOCK_MOVEMENTS_BATCH_LIMIT = 5000;
+
+// Sync puramente incremental por id (bigint sequencial de
+// movimentoestoque): busca o maior uniplus_id já gravado em
+// stock_movements e só pede linhas além dele. Não usa ON CONFLICT — se uma
+// execução falhar no meio de um lote, o próximo MAX(uniplus_id) reflete só
+// o que realmente foi inserido, então a retomada é naturalmente correta
+// (mesmo raciocínio simples de bulkInsert em stock_snapshots).
+//
+// Nenhuma interpretação de tipodocumento acontece aqui — grava tudo cru
+// (inclusive tipos negativos, que são ajuste/estorno do sistema, ver
+// docs/uniplus-schema/04-colunas-confirmadas.md § movimentoestoque). A
+// leitura "isto é perda", "isto é compra" etc. é decisão de análise, fora
+// do escopo desta sincronização.
+async function syncStockMovements(context) {
+  const filialId = settings.uniplus && settings.uniplus.filialId;
+
+  if (context.productIdByUniplusId.size === 0) {
+    const products = await crmPool.query('SELECT id, uniplus_id FROM products');
+    for (const row of products.rows) {
+      context.productIdByUniplusId.set(String(row.uniplus_id), row.id);
+    }
+  }
+
+  const watermarkResult = await crmPool.query(
+    'SELECT COALESCE(MAX(uniplus_id), 0)::bigint AS last_id FROM stock_movements'
+  );
+  const lastId = watermarkResult.rows[0].last_id;
+
+  const movimentos = await uniplusRepository.fetchMovimentoEstoque(filialId, lastId, STOCK_MOVEMENTS_BATCH_LIMIT);
+
+  const rows = [];
+  let skippedNoProduct = 0;
+
+  for (const movimento of movimentos) {
+    const productId = context.productIdByUniplusId.get(String(movimento.idproduto));
+    if (!productId) {
+      // Produto de movimento que não existe (ainda) em `products`: ignorado
+      // — `stock_movements.product_id` é NOT NULL com FK para products.
+      // Continua avançando o watermark normalmente (o movimento fica de
+      // fora do espelho, não trava o sync).
+      skippedNoProduct += 1;
+      continue;
+    }
+
+    rows.push({
+      uniplus_id: movimento.id,
+      product_id: productId,
+      movement_type: toIntegerOrNull(movimento.tipodocumento),
+      quantity_in: toNumberOrNull(movimento.quantidadeentrada) || 0,
+      quantity_out: toNumberOrNull(movimento.quantidadesaida) || 0,
+      total_value: toNumberOrNull(movimento.valortotal),
+      unit_cost: toNumberOrNull(movimento.precocusto),
+      canceled: Number(movimento.cancelado) === 1,
+      source_operacao_uniplus_id: movimento.idoriginal,
+      source_item_uniplus_id: movimento.iditemoriginal,
+      observacao: movimento.observacao || null,
+      movement_date: movimento.data,
+      movement_datetime: movimento.datahora,
+    });
+  }
+
+  const inserted = await bulkInsert({
+    table: 'stock_movements',
+    columns: [
+      'uniplus_id',
+      'product_id',
+      'movement_type',
+      'quantity_in',
+      'quantity_out',
+      'total_value',
+      'unit_cost',
+      'canceled',
+      'source_operacao_uniplus_id',
+      'source_item_uniplus_id',
+      'observacao',
+      'movement_date',
+      'movement_datetime',
+    ],
+    rows,
+  });
+
+  return { inserted, fetched: movimentos.length, skippedNoProduct };
+}
+
+// ---------------------------------------------------------------------------
 // Etapa 6 — sales + sale_items (três origens)
 // ---------------------------------------------------------------------------
 
@@ -1148,6 +1241,21 @@ async function executeSync({ triggeredBy }) {
     addError('stock_snapshots', err);
   }
 
+  // Etapa 5b — stock_movements (Radar da Loja).
+  try {
+    const movements = await syncStockMovements(context);
+    recordsImported.stock_movements = movements.inserted;
+    if (movements.skippedNoProduct > 0) {
+      recordsImported.stock_movements_skipped = movements.skippedNoProduct;
+      addWarning(
+        'stock_movements',
+        `${movements.skippedNoProduct} movimento(s) de estoque ignorado(s) por produto ainda não sincronizado.`
+      );
+    }
+  } catch (err) {
+    addError('stock_movements', err);
+  }
+
   // Etapa 6 — sales + sale_items.
   try {
     const sales = await syncSales(context);
@@ -1277,4 +1385,5 @@ module.exports = {
   normalizeBrazilianPhoneToE164,
   isFlagTrue,
   resolveEntidadeName,
+  syncStockMovements,
 };

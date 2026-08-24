@@ -173,6 +173,54 @@ async function fetchSaldoEstoque(filialId) {
 }
 
 // ---------------------------------------------------------------------------
+// movimentoestoque — ledger de movimentação de estoque
+// ---------------------------------------------------------------------------
+
+// Busca incremental por id (bigint, sequencial): `sinceId` é o maior
+// `uniplus_id` já sincronizado em `stock_movements` — evita reler a tabela
+// inteira a cada sync (19295 linhas hoje, mas é ledger crescente). `limit`
+// limita o tamanho do lote por execução (ver sync.service.js).
+// Colunas validadas em produção (24/08/2026) — ver
+// docs/uniplus-schema/04-colunas-confirmadas.md § movimentoestoque.
+async function fetchMovimentoEstoque(filialId, sinceId, limit) {
+  const normalized = String(filialId === undefined || filialId === null ? '' : filialId).trim();
+
+  if (!/^\d+$/.test(normalized)) {
+    throw new Error(
+      'settings.uniplus.filialId não está configurado com um id numérico de filial do Uniplus ' +
+        `(valor atual: "${normalized}"). Ver docs/uniplus-schema/05-mapeamento-sincronizacao.md, ` +
+        'seção "Parâmetros técnicos".'
+    );
+  }
+
+  const { rows } = await uniplusPool.query(
+    `
+    SELECT
+      id,
+      idfilial,
+      data,
+      datahora,
+      idproduto,
+      tipodocumento,
+      quantidadeentrada,
+      quantidadesaida,
+      valortotal,
+      cancelado,
+      idoriginal,
+      iditemoriginal,
+      observacao,
+      precocusto
+    FROM movimentoestoque
+    WHERE idfilial = $1::bigint AND id > $2
+    ORDER BY id
+    LIMIT $3
+  `,
+    [normalized, sinceId, limit]
+  );
+  return rows;
+}
+
+// ---------------------------------------------------------------------------
 // Vendas — origem 1: notafiscal (âncora)
 // ---------------------------------------------------------------------------
 
@@ -508,6 +556,7 @@ module.exports = {
   fetchEntidadeCodigoIndex,
   fetchProdutos,
   fetchSaldoEstoque,
+  fetchMovimentoEstoque,
   fetchNotasFiscais,
   fetchItensNotaFiscal,
   fetchDavsNaoFaturados,

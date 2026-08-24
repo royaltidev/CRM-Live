@@ -78,6 +78,34 @@ WHERE saldoestoque.idfilial = :uniplusFilialId
 - `product_id` resolvido via `products.uniplus_id = saldoestoque.idproduto::text`
 - `quantity` = `saldoestoque.quantidade`
 
+## stock_movements ← movimentoestoque
+
+Diferente de `stock_snapshots` (foto do saldo atual, refeita inteira a
+cada sync), `movimentoestoque` é um ledger append-only — a sincronização é
+**incremental por id** (bigint sequencial), não um refetch completo:
+
+```sql
+WHERE movimentoestoque.idfilial = :uniplusFilialId
+  AND movimentoestoque.id > :lastSyncedUniplusId  -- MAX(uniplus_id) já em stock_movements
+ORDER BY id
+LIMIT 5000  -- por execução
+```
+
+- `:uniplusFilialId` — mesmo parâmetro técnico de `stock_snapshots`.
+- `product_id` resolvido via `products.uniplus_id = movimentoestoque.idproduto::text`
+  (`idproduto` é id direto, não código — ver `04-colunas-confirmadas.md` §
+  movimentoestoque).
+- Sem `ON CONFLICT`: a retomada correta depois de uma falha no meio de um
+  lote vem do próprio `MAX(uniplus_id)` em `stock_movements` refletir só o
+  que foi realmente inserido — mesmo raciocínio simples já usado em
+  `stock_snapshots`.
+- `movement_type` espelha `tipodocumento` CRU (inclusive valores
+  negativos, que são ajuste/estorno do sistema — ver a tabela de
+  distribuição em `04-colunas-confirmadas.md`). Nenhuma interpretação de
+  negócio acontece na sincronização; fica para a camada de análise que
+  ainda vai consumir esta tabela (Radar da Loja, objetivos 1/4/5 — **ainda
+  não implementada**, esta sincronização só prepara os dados).
+
 ## sales — três origens, sem sobreposição entre elas
 
 Decisão confirmada em 10/08/2026: `notafiscal`, `dav` (não convertido em

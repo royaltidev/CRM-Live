@@ -272,6 +272,90 @@ async function markOfferSkipped(offerId, reason) {
   ]);
 }
 
+// Log paginado para a tela de monitoramento do Piloto Automático — mesmo
+// padrão de message-queue.service.js § listMessages (COUNT + SELECT
+// separados, filtros como condições+params paralelos, LIMIT/OFFSET).
+// customer_id e seller_id são nullable (ON DELETE SET NULL na migration
+// 041), por isso LEFT JOIN; product_id é NOT NULL (ON DELETE RESTRICT),
+// por isso JOIN direto.
+async function listOffers(filters = {}) {
+  const {
+    status,
+    cascadeStep,
+    recipientType,
+    origin,
+    startDate,
+    endDate,
+    page = 1,
+    pageSize = 50,
+  } = filters;
+
+  const conditions = [];
+  const params = [];
+
+  if (status) {
+    params.push(status);
+    conditions.push(`ao.status = $${params.length}`);
+  }
+  if (cascadeStep) {
+    params.push(cascadeStep);
+    conditions.push(`ao.cascade_step = $${params.length}`);
+  }
+  if (recipientType) {
+    params.push(recipientType);
+    conditions.push(`ao.recipient_type = $${params.length}`);
+  }
+  if (origin) {
+    params.push(origin);
+    conditions.push(`ao.origin = $${params.length}`);
+  }
+  if (startDate) {
+    params.push(startDate);
+    conditions.push(`ao.created_at >= $${params.length}`);
+  }
+  if (endDate) {
+    params.push(endDate);
+    conditions.push(`ao.created_at <= $${params.length}`);
+  }
+
+  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+  const safePage = Math.max(1, parseInt(page, 10) || 1);
+  const safePageSize = Math.min(200, Math.max(1, parseInt(pageSize, 10) || 50));
+  const offset = (safePage - 1) * safePageSize;
+
+  const countResult = await crmPool.query(
+    `SELECT COUNT(*)::int AS total FROM autonomous_offers ao ${whereClause}`,
+    params
+  );
+
+  const dataParams = [...params, safePageSize, offset];
+  const dataResult = await crmPool.query(
+    `SELECT ao.id, ao.origin, ao.origin_id, ao.sale_uniplus_id, ao.sale_id,
+            ao.customer_id, c.name AS customer_name,
+            ao.seller_id, s.name AS seller_name,
+            ao.product_id, p.name AS product_name,
+            ao.recipient_type, ao.recipient_phone, ao.cascade_step, ao.rule_reason,
+            ao.channel, ao.status, ao.status_reason,
+            ao.queued_at, ao.sent_at, ao.converted_at, ao.converted_sale_id, ao.created_at
+       FROM autonomous_offers ao
+       LEFT JOIN customers c ON c.id = ao.customer_id
+       LEFT JOIN sellers s ON s.id = ao.seller_id
+       JOIN products p ON p.id = ao.product_id
+       ${whereClause}
+      ORDER BY ao.created_at DESC
+      LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+    dataParams
+  );
+
+  return {
+    offers: dataResult.rows,
+    total: countResult.rows[0].total,
+    page: safePage,
+    pageSize: safePageSize,
+  };
+}
+
 module.exports = {
   KEYS,
   getSettingValue,
@@ -290,4 +374,5 @@ module.exports = {
   markOfferSent,
   markOfferFailed,
   markOfferSkipped,
+  listOffers,
 };

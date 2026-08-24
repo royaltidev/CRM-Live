@@ -34,6 +34,7 @@ import CardGiftcardOutlinedIcon from '@mui/icons-material/CardGiftcardOutlined';
 import SwapHorizOutlinedIcon from '@mui/icons-material/SwapHorizOutlined';
 import SendOutlinedIcon from '@mui/icons-material/SendOutlined';
 import SentimentSatisfiedAltOutlinedIcon from '@mui/icons-material/SentimentSatisfiedAltOutlined';
+import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
 import { useAuth } from '../contexts/AuthContext';
 
 const DRAWER_WIDTH = 260;
@@ -49,6 +50,7 @@ const MENU_ITEMS = [
   { label: 'Tags', path: '/tags', icon: LocalOfferIcon },
   { label: 'Consentimento (LGPD)', path: '/consentimento', icon: GppGoodIcon },
   { label: 'Log de Disparos', path: '/log-disparos', icon: ForumIcon },
+  { label: 'Piloto Automático da Loja', path: '/piloto-automatico', icon: SmartToyOutlinedIcon },
   { label: 'Réguas de Relacionamento', path: '/reguas', icon: CampaignOutlinedIcon },
   { label: 'Modelos de Mensagem', path: '/templates', icon: ArticleOutlinedIcon },
   { label: 'Cupons', path: '/cupons', icon: ConfirmationNumberOutlinedIcon },

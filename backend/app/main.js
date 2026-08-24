@@ -28,6 +28,7 @@ const productsController = require('./controllers/products.controller');
 const complementaryProductsController = require('./controllers/complementary-products.controller');
 const campaignsController = require('./controllers/campaigns.controller');
 const settingsController = require('./controllers/settings.controller');
+const autonomousOffersController = require('./controllers/autonomous-offers.controller');
 const inboxController = require('./controllers/inbox.controller');
 const inboxService = require('./services/inbox.service');
 const npsController = require('./controllers/nps.controller');
@@ -255,6 +256,10 @@ app.put(
   requireAdmin,
   settingsController.updatePilotoAutomaticoSettings
 );
+
+// ===== Rotas do Piloto Automático da Loja — log de monitoramento (ver
+// backend/app/controllers/autonomous-offers.routes.md) =====
+app.get('/piloto-automatico/offers', requireAuth, autonomousOffersController.listOffers);
 
 // ===== Tratamento de Erros Genérico =====
 

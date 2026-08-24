@@ -101,10 +101,15 @@ Ledger de movimentação de estoque (append-only) — base do objetivo 1
 Loja. Validado em produção (24/08/2026, dono do projeto, via cópia de
 teste).
 
-**`idproduto`** tratado como `produto.id` direto (não código) — mesma
-convenção já confirmada para `saldoestoque.idproduto`/`dav.idcliente`/
-`dav.idrepresentante` (colunas com prefixo `id`, diferente de
-`operacao.cliente`/`item.vendedor`/`item.produto`, que são código).
+**`idproduto`** confirmado como `produto.id` direto (não código) —
+validado com 8 ids reais de `movimentoestoque.idproduto` das amostras
+acima (`10899, 11139, 11255, 11258, 11284, 11372, 11373, 11375`), todos
+batendo com produtos reais e coerentes com os valores das vendas (ex.:
+`11255` = "CARTEIRA CLASSE COURO FEM F3942", bate com o `valortotal` de
+R$157,90 da venda `19869`). Mesma convenção já confirmada para
+`saldoestoque.idproduto`/`dav.idcliente`/`dav.idrepresentante` (colunas
+com prefixo `id`, diferente de `operacao.cliente`/`item.vendedor`/
+`item.produto`, que são código).
 
 **`idoriginal`/`iditemoriginal`** confirmados como `operacao.id`/`item.id`
 quando `tipodocumento = 1` (venda) — testado com ids reais: 5 `idoriginal`

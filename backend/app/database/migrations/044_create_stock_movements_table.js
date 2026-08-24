@@ -7,7 +7,7 @@
 // cópia de teste) — ver docs/uniplus-schema/04-colunas-confirmadas.md §
 // movimentoestoque para o levantamento completo (distribuição de
 // movement_type, amostras, confirmação de idoriginal/iditemoriginal =
-// operacao.id/item.id para vendas).
+// operacao.id/item.id para vendas, e de idproduto = produto.id direto).
 //
 // movement_type espelha movimentoestoque.tipodocumento CRU (inclusive
 // valores negativos — são ajustes/estornos do sistema, não um erro de

@@ -120,14 +120,26 @@ três tabelas de origem (todas usam sequências próprias começando em 1):
 ### 2. `source_type = 'dav'` ← dav
 ```sql
 WHERE dav.idnotafiscal IS NULL
-  AND dav.aprovado <> 0
   AND dav.datacancelamento IS NULL
+  -- + dav.tipodocumento IN (lista configurada pelo dono), aplicado em
+  --   sync.service.js, não em SQL — ver abaixo.
 ```
 - `idnotafiscal IS NULL` evita duplicar venda já contada via `notafiscal`
   (ver `02-regras-negocio-uniplus.md`, regra 4).
-- `aprovado <> 0` e `datacancelamento IS NULL` — decisão de 10/08/2026,
-  aplicando a mesma convenção de flags smallint já definida: DAV não
-  aprovada (orçamento/rascunho) ou cancelada não é venda concluída.
+- `datacancelamento IS NULL` — DAV cancelada não é venda concluída.
+- **Correção de 24/08/2026: `aprovado <> 0` foi REMOVIDO deste filtro.**
+  Decisão original de 10/08/2026 estava errada — `aprovado` é fluxo de
+  aprovação interno do Uniplus, não indica se o dav é uma venda concluída;
+  um dav pode ser venda de verdade com `aprovado = 0` (confirmado pelo dono
+  do projeto, 16/08/2026, ver `04-colunas-confirmadas.md` § dav). Quem
+  decide "isto é venda" agora é `dav.tipodocumento`, filtrado em
+  `sync.service.js` contra a lista configurada em `system_settings`
+  (`piloto_automatico.dav_tipos_considerados_venda` — mesma chave usada
+  pelo Piloto Automático em tempo real, `realtime-sale-listener.service.js`).
+  **Enquanto essa chave não estiver configurada pelo Administrador, NENHUM
+  dav vira venda nesta sincronização** (`pending_configuration`, mesmo
+  padrão de `message_cadence`/`rfm_criteria` — não um fallback silencioso
+  para o comportamento antigo).
 - `sale_date` = `dav.data` (ou `dav.datainclusao` se `data` vier nula)
 - `total_amount` = `dav.valor`
 - `customer_id` via `dav.idcliente → entidade.id → customers.uniplus_id`

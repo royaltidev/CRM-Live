@@ -258,13 +258,21 @@ async function fetchItensNotaFiscal(idsNotaFiscal) {
 
 // Implementa: 05-mapeamento-sincronizacao.md § "sales", origem 2
 // (`source_type = 'dav'`) e 02-regras-negocio-uniplus.md, regra 4.
-// Três filtros combinados:
+//
+// NÃO filtra mais por `aprovado <> 0` — correção de 24/08/2026 (mesma
+// decisão já aplicada ao Piloto Automático em tempo real, ver
+// realtime-sale-listener.service.js e docs/uniplus-schema/
+// 04-colunas-confirmadas.md § dav): `aprovado` é fluxo de aprovação
+// interno, não indica se o dav é venda concluída — um dav pode ser venda
+// de verdade com `aprovado = 0`. Quem decide isso é `tipodocumento`
+// (retornado aqui cru; a filtragem pela lista configurada pelo dono em
+// `system_settings` acontece em sync.service.js, mesmo padrão do listener
+// em tempo real — nenhum tipo é assumido por este módulo).
+//
+// Dois filtros estruturais continuam aqui (não dependem de configuração):
 // - `idnotafiscal IS NULL` — dedup: uma DAV que já virou nota fiscal é o
 //   MESMO evento de venda da nota, e seria contada duas vezes se não fosse
 //   excluída aqui.
-// - `aprovado <> 0` — convenção de flag smallint (ver cabeçalho do arquivo):
-//   DAV não aprovada é orçamento/rascunho, não uma venda concluída (decisão
-//   de 10/08/2026, aplicando a convenção de flags já definida).
 // - `datacancelamento IS NULL` — DAV cancelada não é uma venda real (mesma
 //   decisão, por simetria com o filtro de `notafiscal.cancelamento`).
 async function fetchDavsNaoFaturados() {
@@ -282,10 +290,10 @@ async function fetchDavsNaoFaturados() {
       datacancelamento,
       idnotafiscal,
       desconto,
-      datainclusao
+      datainclusao,
+      tipodocumento
     FROM dav
     WHERE idnotafiscal IS NULL
-      AND aprovado <> 0
       AND datacancelamento IS NULL
     ORDER BY id
   `);
@@ -384,6 +392,127 @@ async function fetchItensOperacaoNfce(idsOperacao) {
   return rows;
 }
 
+// ---------------------------------------------------------------------------
+// Piloto Automático da Loja — consultas pontuais por id (Fase nova).
+//
+// Diferente do resto deste arquivo (usado pela sincronização em lote de 15
+// em 15 min), as funções abaixo são chamadas pelo listener em tempo real
+// (backend/app/services/realtime-sale-listener.service.js) uma vez por
+// evento de venda — por isso buscam um único id em vez de tudo/lote.
+// ---------------------------------------------------------------------------
+
+// Uma única operação de PDV/NFC-e, direto da tabela-base `operacao` (não da
+// view — a trigger que gera o evento também opera sobre a tabela-base; ver
+// docs/uniplus-schema/04-colunas-confirmadas.md § "operacao"). `vendedor`
+// resolvido do mesmo jeito que a view faz: código do primeiro item da
+// operação com vendedor preenchido.
+async function fetchOperacaoNfceById(id) {
+  const { rows } = await uniplusPool.query(
+    `
+    SELECT
+      o.id,
+      o.data,
+      o.filial,
+      o.tipo,
+      o.pdv,
+      o.valorliquido,
+      o.modelonfce,
+      o.cliente,
+      o.consumidornome,
+      o.consumidorcpfcnpj,
+      o.cancelado,
+      o.vendaabortada,
+      o.erroprocessamento,
+      o.chaveacessonfce,
+      (
+        SELECT item.vendedor FROM item
+        WHERE item.idoperacao = o.id AND item.vendedor::text <> ''
+        ORDER BY item.id LIMIT 1
+      ) AS vendedor
+    FROM operacao o
+    WHERE o.id = $1
+  `,
+    [id]
+  );
+  return rows[0] || null;
+}
+
+// Um único dav — idcliente/idrepresentante aqui já são id direto de
+// entidade (diferente de operacao/item, que usam código), então não
+// precisam de fetchEntidadeByCodigo.
+async function fetchDavById(id) {
+  const { rows } = await uniplusPool.query(
+    `
+    SELECT
+      id,
+      idfilial,
+      idrepresentante,
+      idcliente,
+      valor,
+      data,
+      aprovado,
+      datacancelamento,
+      idnotafiscal,
+      tipodocumento
+    FROM dav
+    WHERE id = $1
+  `,
+    [id]
+  );
+  return rows[0] || null;
+}
+
+// Resolve um código de entidade (cliente/vendedor de operacao_nfce, que vêm
+// como código — character varying(14) — não como id direto) para o id.
+async function fetchEntidadeByCodigo(codigo) {
+  if (!codigo) {
+    return null;
+  }
+
+  const { rows } = await uniplusPool.query(`SELECT id, codigo FROM entidade WHERE codigo = $1 LIMIT 1`, [
+    codigo,
+  ]);
+  return rows[0] || null;
+}
+
+// Poller de segurança do Piloto Automático: candidatos a venda confirmada
+// nas últimas `hours` horas, mesmo filtro estrutural da trigger — cobre a
+// janela em que o LISTEN esteve fora do ar (NOTIFY não é durável).
+// Bounded por tempo de propósito, para nunca escanear a tabela inteira.
+async function fetchRecentConfirmedOperacaoIds(hours) {
+  const { rows } = await uniplusPool.query(
+    `
+    SELECT id
+    FROM operacao
+    WHERE tipo > 0
+      AND modelonfce = '65'
+      AND COALESCE(cancelado, 0) = 0
+      AND COALESCE(vendaabortada, 0) = 0
+      AND COALESCE(erroprocessamento, 0) = 0
+      AND chaveacessonfce IS NOT NULL
+      AND chaveacessonfce <> ''
+      AND data >= (NOW() - make_interval(hours => $1))::date
+  `,
+    [hours]
+  );
+  return rows.map((row) => row.id);
+}
+
+async function fetchRecentDavCandidateIds(hours) {
+  const { rows } = await uniplusPool.query(
+    `
+    SELECT id, tipodocumento
+    FROM dav
+    WHERE idcliente IS NOT NULL
+      AND datacancelamento IS NULL
+      AND idnotafiscal IS NULL
+      AND datainclusao >= NOW() - make_interval(hours => $1)
+  `,
+    [hours]
+  );
+  return rows;
+}
+
 module.exports = {
   pingUniplus,
   fetchClientes,
@@ -397,4 +526,9 @@ module.exports = {
   fetchItensDav,
   fetchOperacoesNfce,
   fetchItensOperacaoNfce,
+  fetchOperacaoNfceById,
+  fetchDavById,
+  fetchEntidadeByCodigo,
+  fetchRecentConfirmedOperacaoIds,
+  fetchRecentDavCandidateIds,
 };

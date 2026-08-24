@@ -33,6 +33,7 @@ const settings = require('../config/settings');
 const uniplusRepository = require('../integrations/uniplus/uniplus.repository');
 const rfmService = require('./rfm.service');
 const automationTriggerService = require('./automation-trigger.service');
+const autonomousOffersService = require('./autonomous-offers.service');
 
 // Número de linhas por statement nos INSERTs em lote. Mantém a contagem de
 // parâmetros bem abaixo do limite de 65535 do protocolo do Postgres.
@@ -672,28 +673,47 @@ async function syncSales(context) {
   );
 
   // --- Origem 2: dav não faturado ----------------------------------------
+  //
+  // Quais dav.tipodocumento contam como venda é decisão do dono, configurada
+  // em system_settings (piloto_automatico.dav_tipos_considerados_venda) —
+  // mesma chave e mesmo getter usados pelo Piloto Automático em tempo real
+  // (autonomous-offers.service.js), correção de 24/08/2026 substituindo o
+  // filtro antigo por `aprovado <> 0` (aprovado é fluxo de aprovação, não
+  // indica venda concluída — ver docs/uniplus-schema/
+  // 04-colunas-confirmadas.md § dav). Sem essa chave configurada, NENHUM dav
+  // vira venda nesta sincronização — mesmo padrão pending_configuration já
+  // usado em message_cadence/rfm_criteria, não um fallback silencioso.
   const davs = await uniplusRepository.fetchDavsNaoFaturados();
   const davSaleRows = [];
   const davIds = [];
+  const allowedDavTypes = await autonomousOffersService.getDavSaleTypeCodes();
 
-  for (const dav of davs) {
-    // 05-mapeamento-sincronizacao.md: `dav.data`, ou `dav.datainclusao` se
-    // `data` vier nula.
-    const saleDate = dav.data || dav.datainclusao;
-    if (!saleDate) {
-      context.skippedSales += 1;
-      continue;
+  if (allowedDavTypes === null) {
+    context.davPendingConfiguration = true;
+  } else {
+    for (const dav of davs) {
+      if (!allowedDavTypes.includes(Number(dav.tipodocumento))) {
+        continue;
+      }
+
+      // 05-mapeamento-sincronizacao.md: `dav.data`, ou `dav.datainclusao` se
+      // `data` vier nula.
+      const saleDate = dav.data || dav.datainclusao;
+      if (!saleDate) {
+        context.skippedSales += 1;
+        continue;
+      }
+
+      davIds.push(dav.id);
+      davSaleRows.push({
+        uniplus_id: `dav-${dav.id}`,
+        customer_id: resolveCustomerId(context, dav.idcliente),
+        seller_id: resolveSellerId(context, dav.idrepresentante),
+        sale_date: saleDate,
+        total_amount: toNumberOrNull(dav.valor),
+        source_type: 'dav',
+      });
     }
-
-    davIds.push(dav.id);
-    davSaleRows.push({
-      uniplus_id: `dav-${dav.id}`,
-      customer_id: resolveCustomerId(context, dav.idcliente),
-      seller_id: resolveSellerId(context, dav.idrepresentante),
-      sale_date: saleDate,
-      total_amount: toNumberOrNull(dav.valor),
-      source_type: 'dav',
-    });
   }
 
   const davItens = await uniplusRepository.fetchItensDav(davIds);
@@ -1038,6 +1058,7 @@ function createContext() {
     touchedSellerIds: new Set(),
     customersTouchedBySales: new Set(),
     skippedSales: 0,
+    davPendingConfiguration: false,
   };
 }
 
@@ -1142,6 +1163,14 @@ async function executeSync({ triggeredBy }) {
       addWarning(
         'sales',
         `${context.skippedSales} venda(s) ignorada(s) por não ter data de venda utilizável.`
+      );
+    }
+    if (context.davPendingConfiguration) {
+      recordsImported.dav_sales_status = 'pending_configuration';
+      addWarning(
+        'sales',
+        'Vendas via dav não sincronizadas: piloto_automatico.dav_tipos_considerados_venda ' +
+          'ainda não foi configurado pelo Administrador.'
       );
     }
   } catch (err) {

@@ -163,6 +163,13 @@ async function pickEtapa1Candidate(itemProductIds) {
 // cruzada com produtos dessa(s) categoria(s) cujo estoque cresceu nas
 // últimas 48h (stock_snapshots é histórico — nunca upsert, ver
 // sync.service.js § syncStockSnapshots), que o cliente nunca comprou.
+//
+// snapshot_recente exige synced_at dentro de 24h — sem isso, um produto com
+// sync de estoque parado há semanas continuava "atual" para sempre.
+// snapshot_passado agora é INNER JOIN (exige histórico de fato 48h atrás) —
+// como LEFT JOIN + COALESCE(0), qualquer produto novo na tabela de
+// snapshots (nunca teve leitura antiga) parecia uma "reposição" mesmo sem
+// nunca ter tido estoque alterado. Achados de revisão externa, 24/08/2026.
 async function pickEtapa2Candidate(customerId) {
   if (!customerId) {
     return null;
@@ -186,6 +193,7 @@ async function pickEtapa2Candidate(customerId) {
     snapshot_recente AS (
       SELECT DISTINCT ON (product_id) product_id, quantity
       FROM stock_snapshots
+      WHERE synced_at >= NOW() - INTERVAL '24 hours'
       ORDER BY product_id, synced_at DESC
     ),
     snapshot_passado AS (
@@ -196,14 +204,14 @@ async function pickEtapa2Candidate(customerId) {
     )
     SELECT p.id, p.name,
            sr.quantity AS estoque_atual,
-           COALESCE(sp.quantity, 0) AS estoque_48h_atras
+           sp.quantity AS estoque_48h_atras
       FROM products p
       JOIN categorias_do_cliente cc ON cc.category = p.category
       JOIN snapshot_recente sr ON sr.product_id = p.id
-      LEFT JOIN snapshot_passado sp ON sp.product_id = p.id
+      JOIN snapshot_passado sp ON sp.product_id = p.id
      WHERE p.id NOT IN (SELECT product_id FROM produtos_ja_comprados)
-       AND sr.quantity > COALESCE(sp.quantity, 0)
-     ORDER BY (sr.quantity - COALESCE(sp.quantity, 0)) DESC
+       AND sr.quantity > sp.quantity
+     ORDER BY (sr.quantity - sp.quantity) DESC
      LIMIT 1
     `,
     [customerId]
@@ -293,9 +301,20 @@ async function sendAndLog(offerId, phone, body) {
 // Cascata
 // ---------------------------------------------------------------------------
 
+// Consentimento é checado ANTES de createOffer, não depois: uma linha
+// 'skipped: no_consent' torna hasAnyOfferForSale permanentemente true para
+// esta venda (é "qualquer disparo", não por etapa) e bloquearia reprocessar
+// mesmo que o cliente consinta depois. Sem consentimento, simplesmente não
+// registra nada — o poller de segurança pode reencontrar a venda depois
+// (achado de revisão externa, 24/08/2026).
 async function dispatchEtapa1(origin, originId, sale) {
   const candidate = await pickEtapa1Candidate(sale.itemProductIds);
   if (!candidate) {
+    return;
+  }
+
+  const eligible = await isCustomerEligibleForMessage(sale.customerId);
+  if (!eligible) {
     return;
   }
 
@@ -317,18 +336,24 @@ async function dispatchEtapa1(origin, originId, sale) {
     return; // já processado (UNIQUE da migration 041)
   }
 
-  const eligible = await isCustomerEligibleForMessage(sale.customerId);
-  if (!eligible) {
-    await autonomousOffersService.markOfferSkipped(offerId, 'no_consent');
-    return;
+  // Tudo depois do createOffer fica em try/catch: uma exceção aqui não pode
+  // deixar a oferta 'queued' para sempre (hasAnyOfferForSale bloquearia
+  // reprocessamento futuro).
+  try {
+    await sendAndLog(offerId, customerPhone, buildEtapa1Message(candidate));
+  } catch (err) {
+    await autonomousOffersService.markOfferFailed(offerId, err.message);
   }
-
-  await sendAndLog(offerId, customerPhone, buildEtapa1Message(candidate));
 }
 
 async function dispatchEtapa2(origin, originId, sale) {
   const candidate = await pickEtapa2Candidate(sale.customerId);
   if (!candidate) {
+    return;
+  }
+
+  const eligible = await isCustomerEligibleForMessage(sale.customerId);
+  if (!eligible) {
     return;
   }
 
@@ -350,13 +375,11 @@ async function dispatchEtapa2(origin, originId, sale) {
     return;
   }
 
-  const eligible = await isCustomerEligibleForMessage(sale.customerId);
-  if (!eligible) {
-    await autonomousOffersService.markOfferSkipped(offerId, 'no_consent');
-    return;
+  try {
+    await sendAndLog(offerId, customerPhone, buildEtapa2Message(candidate));
+  } catch (err) {
+    await autonomousOffersService.markOfferFailed(offerId, err.message);
   }
-
-  await sendAndLog(offerId, customerPhone, buildEtapa2Message(candidate));
 }
 
 async function scheduleEtapa2(origin, originId, sale) {
@@ -401,7 +424,11 @@ async function dispatchAvisoVendedor(origin, originId, sale) {
     return;
   }
 
-  await sendAndLog(offerId, sale.sellerPhone, buildAvisoVendedorMessage(candidates));
+  try {
+    await sendAndLog(offerId, sale.sellerPhone, buildAvisoVendedorMessage(candidates));
+  } catch (err) {
+    await autonomousOffersService.markOfferFailed(offerId, err.message);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -426,9 +453,16 @@ async function handleSaleEvent({ origin, id, tipodocumento }) {
 
   if (origin === 'dav') {
     const allowedTypes = await autonomousOffersService.getDavSaleTypeCodes();
-    if (!allowedTypes || !allowedTypes.includes(Number(tipodocumento))) {
-      // Lista não configurada, ou este tipodocumento não está nela: não é
-      // tratado como venda por este motor. Sem log — nada foi decidido.
+    if (!allowedTypes) {
+      console.log(
+        `[realtime-sale-listener] dav id=${originId} ignorado: pending_configuration ` +
+          '(piloto_automatico.dav_tipos_considerados_venda não definido)'
+      );
+      return;
+    }
+    if (!allowedTypes.includes(Number(tipodocumento))) {
+      // Lista configurada, mas este tipodocumento não está nela — decisão
+      // deliberada do dono, não pendência. Sem log.
       return;
     }
   }
@@ -438,8 +472,15 @@ async function handleSaleEvent({ origin, id, tipodocumento }) {
     return;
   }
 
+  // Etapa 2 não depende dos itens da venda (é baseada em categoria +
+  // histórico do cliente, não nos produtos desta venda específica) — por
+  // isso tem sua própria condição, sem acoplar com itemProductIds.length
+  // como a Etapa 1 (achado de revisão externa, 24/08/2026).
   if (sale.customerId && sale.itemProductIds.length > 0) {
     await dispatchEtapa1(origin, originId, sale);
+  }
+
+  if (sale.customerId) {
     await scheduleEtapa2(origin, originId, sale);
   }
 

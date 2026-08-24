@@ -47,13 +47,21 @@ async function getDavSaleTypeCodes() {
   return value.codes.map((code) => Number(code)).filter((code) => Number.isFinite(code));
 }
 
+// Teto de segurança para o delay em setTimeout — acima de ~24,8 dias
+// (2^31-1 ms) o Node estoura o int32 do timer e dispara na hora, sem aviso
+// (revisão de código externa, 24/08/2026). 20 dias fica bem abaixo do limite
+// e é mais que suficiente para o caso de uso (reposição de categoria).
+const ETAPA2_DELAY_MAX_MINUTES = 20 * 24 * 60;
+
 // Atraso, em minutos, entre a Etapa 1 (complemento imediato) e a Etapa 2
 // (reposição de categoria) da cascata pós-venda. Sem valor configurado, a
 // Etapa 2 fica pausada — só a Etapa 1 e o aviso ao vendedor (que não
 // dependem deste atraso) continuam ativos.
 async function getEtapa2DelayMinutes() {
   const value = await getSettingValue(KEYS.ETAPA2_DELAY_MINUTES);
-  return value && Number.isFinite(value.minutes) && value.minutes >= 0 ? value.minutes : null;
+  return value && Number.isFinite(value.minutes) && value.minutes >= 0 && value.minutes <= ETAPA2_DELAY_MAX_MINUTES
+    ? value.minutes
+    : null;
 }
 
 // Janela, em dias, usada para considerar uma oferta "convertida" (nova
@@ -135,12 +143,18 @@ async function markOfferSent(offerId, externalMessageId) {
 
 async function markOfferFailed(offerId, reason) {
   console.error(`[autonomous-offers] Falha ao enviar oferta id=${offerId}:`, reason);
-  await crmPool.query(`UPDATE autonomous_offers SET status = 'failed' WHERE id = $1`, [offerId]);
+  await crmPool.query(`UPDATE autonomous_offers SET status = 'failed', status_reason = $2 WHERE id = $1`, [
+    offerId,
+    reason,
+  ]);
 }
 
 async function markOfferSkipped(offerId, reason) {
   console.log(`[autonomous-offers] Oferta id=${offerId} não enviada:`, reason);
-  await crmPool.query(`UPDATE autonomous_offers SET status = 'skipped' WHERE id = $1`, [offerId]);
+  await crmPool.query(`UPDATE autonomous_offers SET status = 'skipped', status_reason = $2 WHERE id = $1`, [
+    offerId,
+    reason,
+  ]);
 }
 
 module.exports = {

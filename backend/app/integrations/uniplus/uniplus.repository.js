@@ -471,7 +471,7 @@ async function fetchRecentConfirmedOperacaoIds(hours) {
       AND COALESCE(erroprocessamento, 0) = 0
       AND chaveacessonfce IS NOT NULL
       AND chaveacessonfce <> ''
-      AND data >= (NOW() - ($1 || ' hours')::interval)::date
+      AND data >= (NOW() - make_interval(hours => $1))::date
   `,
     [hours]
   );
@@ -486,7 +486,7 @@ async function fetchRecentDavCandidateIds(hours) {
     WHERE idcliente IS NOT NULL
       AND datacancelamento IS NULL
       AND idnotafiscal IS NULL
-      AND datainclusao >= NOW() - ($1 || ' hours')::interval
+      AND datainclusao >= NOW() - make_interval(hours => $1)
   `,
     [hours]
   );

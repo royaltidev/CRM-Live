@@ -25,6 +25,8 @@ const MAX_BACKOFF_MS = 60 * 1000;
 let listenerClient = null;
 let backoffMs = 1000;
 let started = false;
+let reconnecting = false;
+let pollRunning = false;
 
 function parsePayload(raw) {
   try {
@@ -35,7 +37,15 @@ function parsePayload(raw) {
   }
 }
 
+// `error` e `end` podem disparar os dois para o mesmo client morto — sem
+// esse flag, cada um agendava sua própria reconexão e dois listeners
+// acabavam ativos no mesmo canal (achado de revisão externa, 24/08/2026).
 function scheduleReconnect() {
+  if (reconnecting) {
+    return;
+  }
+  reconnecting = true;
+
   if (listenerClient) {
     listenerClient.removeAllListeners();
     listenerClient.release(new Error('listener reconectando'));
@@ -46,6 +56,7 @@ function scheduleReconnect() {
 }
 
 async function connectAndListen() {
+  reconnecting = false;
   try {
     listenerClient = await uniplusPool.connect();
     await listenerClient.query(`LISTEN ${CHANNEL}`);
@@ -77,19 +88,39 @@ async function connectAndListen() {
   }
 }
 
+// pollRunning evita sobreposição se um poll demorar mais que o intervalo de
+// 5 min (48h de vendas em loop sequencial pode acontecer). O try/catch por
+// id evita que uma falha isolada (ex.: um id com dado inconsistente) aborte
+// o resto do lote — antes, o catch só existia no nível da função inteira
+// (achados de revisão externa, 24/08/2026).
 async function runSafetyPoll() {
+  if (pollRunning) {
+    return;
+  }
+  pollRunning = true;
+
   try {
     const operacaoIds = await uniplusRepository.fetchRecentConfirmedOperacaoIds(SAFETY_POLL_WINDOW_HOURS);
     for (const id of operacaoIds) {
-      await handleSaleEvent({ origin: 'operacao', id });
+      try {
+        await handleSaleEvent({ origin: 'operacao', id });
+      } catch (err) {
+        console.error(`[realtime-sale-listener] Falha ao processar operacao id=${id} no poller:`, err.message);
+      }
     }
 
     const davRows = await uniplusRepository.fetchRecentDavCandidateIds(SAFETY_POLL_WINDOW_HOURS);
     for (const row of davRows) {
-      await handleSaleEvent({ origin: 'dav', id: row.id, tipodocumento: row.tipodocumento });
+      try {
+        await handleSaleEvent({ origin: 'dav', id: row.id, tipodocumento: row.tipodocumento });
+      } catch (err) {
+        console.error(`[realtime-sale-listener] Falha ao processar dav id=${row.id} no poller:`, err.message);
+      }
     }
   } catch (err) {
     console.error('[realtime-sale-listener] Falha no poller de segurança:', err.message);
+  } finally {
+    pollRunning = false;
   }
 }
 

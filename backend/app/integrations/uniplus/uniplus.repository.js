@@ -246,13 +246,21 @@ async function fetchItensNotaFiscal(idsNotaFiscal) {
 
 // Implementa: 05-mapeamento-sincronizacao.md § "sales", origem 2
 // (`source_type = 'dav'`) e 02-regras-negocio-uniplus.md, regra 4.
-// Três filtros combinados:
+//
+// NÃO filtra mais por `aprovado <> 0` — correção de 24/08/2026 (mesma
+// decisão já aplicada ao Piloto Automático em tempo real, ver
+// realtime-sale-listener.service.js e docs/uniplus-schema/
+// 04-colunas-confirmadas.md § dav): `aprovado` é fluxo de aprovação
+// interno, não indica se o dav é venda concluída — um dav pode ser venda
+// de verdade com `aprovado = 0`. Quem decide isso é `tipodocumento`
+// (retornado aqui cru; a filtragem pela lista configurada pelo dono em
+// `system_settings` acontece em sync.service.js, mesmo padrão do listener
+// em tempo real — nenhum tipo é assumido por este módulo).
+//
+// Dois filtros estruturais continuam aqui (não dependem de configuração):
 // - `idnotafiscal IS NULL` — dedup: uma DAV que já virou nota fiscal é o
 //   MESMO evento de venda da nota, e seria contada duas vezes se não fosse
 //   excluída aqui.
-// - `aprovado <> 0` — convenção de flag smallint (ver cabeçalho do arquivo):
-//   DAV não aprovada é orçamento/rascunho, não uma venda concluída (decisão
-//   de 10/08/2026, aplicando a convenção de flags já definida).
 // - `datacancelamento IS NULL` — DAV cancelada não é uma venda real (mesma
 //   decisão, por simetria com o filtro de `notafiscal.cancelamento`).
 async function fetchDavsNaoFaturados() {
@@ -270,10 +278,10 @@ async function fetchDavsNaoFaturados() {
       datacancelamento,
       idnotafiscal,
       desconto,
-      datainclusao
+      datainclusao,
+      tipodocumento
     FROM dav
     WHERE idnotafiscal IS NULL
-      AND aprovado <> 0
       AND datacancelamento IS NULL
     ORDER BY id
   `);

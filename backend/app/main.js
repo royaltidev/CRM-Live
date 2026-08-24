@@ -243,6 +243,18 @@ app.put(
 );
 app.get('/settings/smart-sales-ai', requireAuth, requireAdmin, settingsController.getSmartSalesAiSettings);
 app.put('/settings/smart-sales-ai', requireAuth, requireAdmin, settingsController.updateSmartSalesAiSettings);
+app.get(
+  '/settings/piloto-automatico',
+  requireAuth,
+  requireAdmin,
+  settingsController.getPilotoAutomaticoSettings
+);
+app.put(
+  '/settings/piloto-automatico',
+  requireAuth,
+  requireAdmin,
+  settingsController.updatePilotoAutomaticoSettings
+);
 
 // ===== Tratamento de Erros Genérico =====
 

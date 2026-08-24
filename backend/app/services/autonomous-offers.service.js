@@ -15,11 +15,25 @@ const KEYS = {
   DAV_TIPOS_CONSIDERADOS_VENDA: 'piloto_automatico.dav_tipos_considerados_venda',
   ETAPA2_DELAY_MINUTES: 'piloto_automatico.etapa2_delay_minutes',
   CONVERSION_WINDOW_DAYS: 'radar.autonomous_offer_conversion_window_days',
+  DEFAULT_LEAD_TIME_DAYS: 'radar.default_lead_time_days',
 };
 
 async function getSettingValue(key) {
   const result = await crmPool.query('SELECT value FROM system_settings WHERE key = $1', [key]);
   return result.rows.length === 0 ? null : result.rows[0].value;
+}
+
+// Mesmo padrão de upsert usado em automation-settings.service.js e
+// rfm.service.js — cada serviço que toca system_settings mantém sua
+// própria cópia (não há módulo compartilhado no projeto para isso).
+async function upsertSettingValue(key, value, description, updatedBy) {
+  await crmPool.query(
+    `INSERT INTO system_settings (key, value, description, updated_by, updated_at)
+     VALUES ($1, $2::jsonb, $3, $4, NOW())
+     ON CONFLICT (key) DO UPDATE
+       SET value = $2::jsonb, updated_by = $4, updated_at = NOW()`,
+    [key, JSON.stringify(value), description, updatedBy]
+  );
 }
 
 // Intervalo mínimo, em segundos, entre disparos de WhatsApp do Piloto
@@ -29,6 +43,21 @@ async function getSettingValue(key) {
 async function getWhatsappMinIntervalSeconds() {
   const value = await getSettingValue(KEYS.WHATSAPP_MIN_INTERVAL_SECONDS);
   return value && Number.isFinite(value.seconds) && value.seconds > 0 ? value.seconds : null;
+}
+
+async function setWhatsappMinIntervalSeconds(seconds, updatedBy) {
+  if (!Number.isFinite(seconds) || seconds <= 0) {
+    throw new Error('O intervalo mínimo entre disparos de WhatsApp deve ser um número maior que zero.');
+  }
+
+  await upsertSettingValue(
+    KEYS.WHATSAPP_MIN_INTERVAL_SECONDS,
+    { seconds },
+    'Intervalo mínimo, em segundos, entre disparos de WhatsApp do Piloto Automático da Loja.',
+    updatedBy
+  );
+
+  return seconds;
 }
 
 // Lista de dav.tipodocumento tratados como venda concluída (quando o dav
@@ -45,6 +74,34 @@ async function getDavSaleTypeCodes() {
     return null;
   }
   return value.codes.map((code) => Number(code)).filter((code) => Number.isFinite(code));
+}
+
+// Aceita lista vazia de propósito (distinto de "não configurado" — ver
+// getDavSaleTypeCodes) — "nenhum tipo conta como venda" é uma escolha
+// válida do dono, não um erro. Não restringe a um whitelist fixo de
+// códigos: os valores confirmados em produção (16/08/2026) são 1, 2, 4, 6,
+// 7, mas a tela de parâmetros oferece esses como opção sem travar o
+// backend caso apareça um tipo novo no Uniplus no futuro.
+async function setDavSaleTypeCodes(codes, updatedBy) {
+  if (!Array.isArray(codes)) {
+    throw new Error('A lista de tipos de dav considerados venda deve ser uma lista.');
+  }
+
+  const normalized = codes.map((code) => Number(code));
+  if (normalized.some((code) => !Number.isFinite(code) || !Number.isInteger(code) || code < 0)) {
+    throw new Error('Cada tipo de dav deve ser um número inteiro não-negativo.');
+  }
+
+  const unique = Array.from(new Set(normalized));
+
+  await upsertSettingValue(
+    KEYS.DAV_TIPOS_CONSIDERADOS_VENDA,
+    { codes: unique },
+    'Lista de dav.tipodocumento tratados como venda concluída (Piloto Automático e sincronização em lote).',
+    updatedBy
+  );
+
+  return unique;
 }
 
 // Teto de segurança para o delay em setTimeout — acima de ~24,8 dias
@@ -64,6 +121,23 @@ async function getEtapa2DelayMinutes() {
     : null;
 }
 
+async function setEtapa2DelayMinutes(minutes, updatedBy) {
+  if (!Number.isFinite(minutes) || minutes < 0 || minutes > ETAPA2_DELAY_MAX_MINUTES) {
+    throw new Error(
+      `O atraso da Etapa 2 deve ser um número entre 0 e ${ETAPA2_DELAY_MAX_MINUTES} minutos (20 dias).`
+    );
+  }
+
+  await upsertSettingValue(
+    KEYS.ETAPA2_DELAY_MINUTES,
+    { minutes },
+    'Atraso, em minutos, entre a Etapa 1 (complemento imediato) e a Etapa 2 (reposição de categoria) da cascata pós-venda.',
+    updatedBy
+  );
+
+  return minutes;
+}
+
 // Janela, em dias, usada para considerar uma oferta "convertida" (nova
 // venda do produto ofertado para o mesmo cliente dentro desse prazo). Ainda
 // sem definição do dono — usado só pelo job de atribuição de conversão
@@ -71,6 +145,47 @@ async function getEtapa2DelayMinutes() {
 async function getConversionWindowDays() {
   const value = await getSettingValue(KEYS.CONVERSION_WINDOW_DAYS);
   return value && Number.isFinite(value.days) && value.days > 0 ? value.days : null;
+}
+
+async function setConversionWindowDays(days, updatedBy) {
+  if (!Number.isFinite(days) || days <= 0) {
+    throw new Error('A janela de conversão deve ser um número de dias maior que zero.');
+  }
+
+  await upsertSettingValue(
+    KEYS.CONVERSION_WINDOW_DAYS,
+    { days },
+    'Janela, em dias, para considerar uma oferta autônoma como "convertida" (nova venda do produto ofertado).',
+    updatedBy
+  );
+
+  return days;
+}
+
+// Antecedência mínima, em dias, para o alerta de compra sazonal (objetivo 3
+// do Radar da Loja). TEM valor padrão definido pelo dono (30 — "pelo menos
+// um mês"), semeado pela migration 042 — diferente das demais chaves deste
+// arquivo, cai no padrão em vez de bloquear a funcionalidade se a chave for
+// removida (mesmo raciocínio de getNpsSurveyDelayMinutes em
+// automation-settings.service.js).
+async function getDefaultLeadTimeDays() {
+  const value = await getSettingValue(KEYS.DEFAULT_LEAD_TIME_DAYS);
+  return value && Number.isFinite(value.days) && value.days > 0 ? value.days : 30;
+}
+
+async function setDefaultLeadTimeDays(days, updatedBy) {
+  if (!Number.isFinite(days) || days <= 0) {
+    throw new Error('A antecedência padrão do alerta de compra sazonal deve ser um número de dias maior que zero.');
+  }
+
+  await upsertSettingValue(
+    KEYS.DEFAULT_LEAD_TIME_DAYS,
+    { days },
+    'Antecedência mínima, em dias, para o alerta de compra sazonal (objetivo 3 do Radar da Loja).',
+    updatedBy
+  );
+
+  return days;
 }
 
 // Já existe QUALQUER disparo (qualquer etapa) registrado para esta venda?
@@ -161,9 +276,15 @@ module.exports = {
   KEYS,
   getSettingValue,
   getWhatsappMinIntervalSeconds,
+  setWhatsappMinIntervalSeconds,
   getDavSaleTypeCodes,
+  setDavSaleTypeCodes,
   getEtapa2DelayMinutes,
+  setEtapa2DelayMinutes,
   getConversionWindowDays,
+  setConversionWindowDays,
+  getDefaultLeadTimeDays,
+  setDefaultLeadTimeDays,
   hasAnyOfferForSale,
   createOffer,
   markOfferSent,

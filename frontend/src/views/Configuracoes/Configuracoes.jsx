@@ -19,10 +19,26 @@ import { useAuth } from '../../contexts/AuthContext';
 
 // Tela de Configurações (FSD 12.13) — exclusiva do Administrador.
 //
-// Hoje cuida só do parâmetro de classificação de intenção de lead na caixa
-// de entrada (Fase 9): liga/desliga a classificação via IA (DeepSeek) e, se
+// Cuida do parâmetro de classificação de intenção de lead na caixa de
+// entrada (Fase 9): liga/desliga a classificação via IA (DeepSeek) e, se
 // desligada, as palavras-chave que decidem "intenção de compra" ou "dúvida"
 // na resposta do cliente — ver backend/app/services/lead-intent.service.js.
+// Também cuida da IA de Venda Inteligente e dos parâmetros do Piloto
+// Automático da Loja / Radar da Loja (backend/app/services/
+// autonomous-offers.service.js) — todos ficam "pending_configuration"
+// (recurso pausado) até o Administrador preencher aqui.
+
+// Valores de dav.tipodocumento confirmados em produção (16/08/2026) — ver
+// docs/uniplus-schema/04-colunas-confirmadas.md § dav. A lista não é
+// travada no backend (aceita qualquer código inteiro), mas aqui só
+// oferecemos os confirmados para reduzir erro de digitação.
+const DAV_TIPO_OPTIONS = [
+  { value: 1, label: '1 — Pré-venda' },
+  { value: 2, label: '2 — Orçamento' },
+  { value: 4, label: '4 — Pedido de Venda' },
+  { value: 6, label: '6 — Pedido de Faturamento' },
+  { value: 7, label: '7 — Orçamento de Faturamento' },
+];
 
 export default function Configuracoes() {
   const navigate = useNavigate();
@@ -39,6 +55,14 @@ export default function Configuracoes() {
 
   const [smartSalesAiEnabled, setSmartSalesAiEnabled] = useState(true);
   const [smartSalesSaving, setSmartSalesSaving] = useState(false);
+
+  const [whatsappIntervalInput, setWhatsappIntervalInput] = useState('');
+  const [davTiposValue, setDavTiposValue] = useState([]);
+  const [davTouched, setDavTouched] = useState(false);
+  const [etapa2DelayInput, setEtapa2DelayInput] = useState('');
+  const [conversionWindowInput, setConversionWindowInput] = useState('');
+  const [defaultLeadTimeInput, setDefaultLeadTimeInput] = useState('');
+  const [pilotoSaving, setPilotoSaving] = useState(false);
 
   const handleAuthFailure = useCallback(
     async (response) => {
@@ -82,6 +106,26 @@ export default function Configuracoes() {
         const smartSalesData = await smartSalesResponse.json();
         setSmartSalesAiEnabled(smartSalesData.aiEnabled);
       }
+
+      const pilotoResponse = await fetch('/settings/piloto-automatico', {
+        method: 'GET',
+        credentials: 'include',
+      });
+      if (pilotoResponse.ok) {
+        const pilotoData = await pilotoResponse.json();
+        setWhatsappIntervalInput(
+          pilotoData.whatsappMinIntervalSeconds !== null ? String(pilotoData.whatsappMinIntervalSeconds) : ''
+        );
+        setDavTiposValue(
+          Array.isArray(pilotoData.davTiposConsideradosVenda) ? pilotoData.davTiposConsideradosVenda : []
+        );
+        setDavTouched(pilotoData.davTiposConsideradosVenda !== null);
+        setEtapa2DelayInput(pilotoData.etapa2DelayMinutes !== null ? String(pilotoData.etapa2DelayMinutes) : '');
+        setConversionWindowInput(
+          pilotoData.conversionWindowDays !== null ? String(pilotoData.conversionWindowDays) : ''
+        );
+        setDefaultLeadTimeInput(String(pilotoData.defaultLeadTimeDays));
+      }
     } catch (err) {
       setError(err.message || 'Erro ao carregar configurações.');
     } finally {
@@ -115,6 +159,58 @@ export default function Configuracoes() {
   useEffect(() => {
     loadSettings();
   }, [loadSettings]);
+
+  // Só inclui no corpo da requisição os campos preenchidos (ou a lista de
+  // tipos de dav, se já configurada ou tocada nesta sessão) — deixar um
+  // campo em branco não apaga um valor já salvo em outro campo do mesmo
+  // formulário (atualização parcial, ver settings.controller.js).
+  async function handleSavePiloto() {
+    try {
+      setPilotoSaving(true);
+
+      const body = {};
+      if (whatsappIntervalInput.trim() !== '') {
+        body.whatsappMinIntervalSeconds = Number(whatsappIntervalInput);
+      }
+      if (davTouched) {
+        body.davTiposConsideradosVenda = davTiposValue;
+      }
+      if (etapa2DelayInput.trim() !== '') {
+        body.etapa2DelayMinutes = Number(etapa2DelayInput);
+      }
+      if (conversionWindowInput.trim() !== '') {
+        body.conversionWindowDays = Number(conversionWindowInput);
+      }
+      if (defaultLeadTimeInput.trim() !== '') {
+        body.defaultLeadTimeDays = Number(defaultLeadTimeInput);
+      }
+
+      const response = await fetch('/settings/piloto-automatico', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(body),
+      });
+
+      if (await handleAuthFailure(response)) return;
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Não foi possível salvar.');
+
+      setWhatsappIntervalInput(
+        data.whatsappMinIntervalSeconds !== null ? String(data.whatsappMinIntervalSeconds) : ''
+      );
+      setDavTiposValue(Array.isArray(data.davTiposConsideradosVenda) ? data.davTiposConsideradosVenda : []);
+      setDavTouched(data.davTiposConsideradosVenda !== null);
+      setEtapa2DelayInput(data.etapa2DelayMinutes !== null ? String(data.etapa2DelayMinutes) : '');
+      setConversionWindowInput(data.conversionWindowDays !== null ? String(data.conversionWindowDays) : '');
+      setDefaultLeadTimeInput(String(data.defaultLeadTimeDays));
+      setSnackbar({ severity: 'success', message: 'Configurações do Piloto Automático salvas.' });
+    } catch (err) {
+      setSnackbar({ severity: 'error', message: err.message || 'Erro ao salvar configurações.' });
+    } finally {
+      setPilotoSaving(false);
+    }
+  }
 
   async function handleSave() {
     try {
@@ -274,6 +370,99 @@ export default function Configuracoes() {
             }
             label={smartSalesAiEnabled ? 'Refinar sugestões via IA (DeepSeek)' : 'Usar apenas os candidatos estatísticos'}
           />
+        </Card>
+      )}
+
+      {!loading && (
+        <Card sx={{ padding: 3, marginTop: 3 }}>
+          <Typography variant="h6" sx={{ marginBottom: 1 }}>
+            Piloto Automático da Loja
+          </Typography>
+          <Typography variant="body2" sx={{ color: '#666666', marginBottom: 2 }}>
+            Cascata de cross-sell disparada em tempo real logo após uma venda ser confirmada no
+            Uniplus (WhatsApp para o cliente e para o vendedor). Cada parâmetro abaixo fica pausado
+            enquanto não for preenchido — nenhum valor é assumido pelo sistema.
+          </Typography>
+
+          <TextField
+            label="Intervalo mínimo entre envios de WhatsApp (segundos)"
+            type="number"
+            size="small"
+            fullWidth
+            value={whatsappIntervalInput}
+            onChange={(e) => setWhatsappIntervalInput(e.target.value)}
+            helperText="Protege o número contra bloqueio por padrão de envio. Em branco = disparo pausado."
+            sx={{ marginBottom: 3 }}
+          />
+
+          <Typography variant="subtitle1" sx={{ marginBottom: 1, fontWeight: 600 }}>
+            Tipos de dav considerados venda
+          </Typography>
+          <Typography variant="body2" sx={{ color: '#666666', marginBottom: 1 }}>
+            Um dav (pré-venda, orçamento, pedido) que ainda não virou nota fiscal também é
+            considerado venda se o tipo de documento estiver nesta lista — vale tanto para o Piloto
+            Automático quanto para a sincronização em lote comum. Lista vazia = nenhum dav conta
+            como venda (decisão deliberada, diferente de deixar em branco).
+          </Typography>
+          <Autocomplete
+            multiple
+            options={DAV_TIPO_OPTIONS}
+            getOptionLabel={(option) => option.label}
+            isOptionEqualToValue={(option, value) => option.value === value.value}
+            value={DAV_TIPO_OPTIONS.filter((option) => davTiposValue.includes(option.value))}
+            onChange={(e, newValue) => {
+              setDavTiposValue(newValue.map((option) => option.value));
+              setDavTouched(true);
+            }}
+            renderInput={(params) => (
+              <TextField {...params} placeholder="Selecione os tipos de dav" size="small" />
+            )}
+            sx={{ marginBottom: 3 }}
+          />
+          {!davTouched && (
+            <Alert severity="warning" sx={{ marginBottom: 3 }}>
+              Ainda não configurado — nenhum dav é considerado venda (nem no Piloto Automático, nem
+              na sincronização em lote) até essa lista ser definida.
+            </Alert>
+          )}
+
+          <TextField
+            label="Atraso da Etapa 2 — reposição de categoria (minutos)"
+            type="number"
+            size="small"
+            fullWidth
+            value={etapa2DelayInput}
+            onChange={(e) => setEtapa2DelayInput(e.target.value)}
+            helperText="Tempo entre o complemento imediato (Etapa 1) e o aviso de reposição (Etapa 2). Em branco = Etapa 2 pausada."
+            sx={{ marginBottom: 3 }}
+          />
+
+          <TextField
+            label="Janela de conversão de oferta autônoma (dias)"
+            type="number"
+            size="small"
+            fullWidth
+            value={conversionWindowInput}
+            onChange={(e) => setConversionWindowInput(e.target.value)}
+            helperText="Prazo para contar uma nova compra do produto ofertado como conversão da oferta."
+            sx={{ marginBottom: 3 }}
+          />
+
+          <TextField
+            label="Antecedência do alerta de compra sazonal — Radar da Loja (dias)"
+            type="number"
+            size="small"
+            fullWidth
+            value={defaultLeadTimeInput}
+            onChange={(e) => setDefaultLeadTimeInput(e.target.value)}
+            helperText="Padrão: 30 dias (pelo menos um mês de antecedência)."
+          />
+
+          <Box sx={{ display: 'flex', justifyContent: 'flex-end', marginTop: 3 }}>
+            <Button variant="contained" onClick={handleSavePiloto} disabled={pilotoSaving}>
+              {pilotoSaving ? 'Salvando...' : 'Salvar'}
+            </Button>
+          </Box>
         </Card>
       )}
 
